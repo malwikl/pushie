@@ -1,0 +1,29 @@
+services:
+  push:
+    build:
+      context: .
+      # Re-run compilation even when source is unchanged, assigning a new build number.
+      no_cache: true
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_PATH: /data/webpush.sqlite
+    container_name: pushie
+    ports:
+      - "8099:8099"
+    volumes:
+      - type: bind
+        source: ./shared-data
+        target: /data
+        bind:
+          create_host_path: false
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8099/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

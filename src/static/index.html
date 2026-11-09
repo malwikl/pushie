@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="pushie-version" content="__PUSHIE_VERSION__">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#132c51">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/icon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png">
+  <script src="/theme.js?v=__PUSHIE_VERSION__"></script>
+  <link rel="stylesheet" href="/style.css?v=__PUSHIE_VERSION__">
+  <title>pushie</title>
+</head>
+<body>
+  <div id="pullRefresh" class="pull-refresh" role="status" aria-live="polite" hidden><span class="pull-refresh-spinner" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span id="pullRefreshLabel" class="pull-refresh-label"></span></div>
+  <main class="container">
+    <header><img class="mark" src="/icon.svg" alt="" width="36" height="36"><div><h1>pushie <span id="syncIndicator" class="sync-indicator" role="status" hidden></span></h1></div><div class="header-menu">
+      <button id="themeToggle" class="icon-button theme-toggle" type="button" aria-label="Dunkelmodus" title="Dunkelmodus" aria-pressed="false"><svg class="theme-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14A8.5 8.5 0 0 1 10 3.5 8.5 8.5 0 1 0 20.5 14Z"/></svg><svg class="theme-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/></svg></button>
+      <button id="menuToggle" class="icon-button" type="button" aria-label="Menü" title="Menü" aria-expanded="false" aria-controls="headerMenu"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      <nav id="headerMenu" class="menu-popover" aria-label="Menü" hidden>
+        <button id="messagesShortcut" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 4h16v12H8l-4 4Z"/></svg><span>Nachrichten</span></button>
+        <button id="devicesShortcut" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 2h8v20H8ZM11 18h2"/></svg><span>Geräte</span></button>
+        <button id="topicsShortcut" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 8h16M4 16h16M10 3l-3 18M17 3l-3 18"/></svg><span>Topics</span></button>
+        <button id="accountShortcut" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 21a8 8 0 0 1 16 0M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8"/></svg><span>Kontoverwaltung</span></button>
+        <button id="adminShortcut" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 3 7v5c0 5 9 9 9 9s9-4 9-9V7ZM8 12l3 3 5-6"/></svg><span>Administration</span></button>
+        <label class="language-control">Language / Sprache <select id="language"><option value="de">Deutsch</option><option value="en">English</option></select></label>
+        <button id="logout" class="danger" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 4H4v16h5M14 8l4 4-4 4M8 12h13"/></svg><span>Abmelden</span></button>
+      </nav>
+    </div></header>
+    <section class="panel" id="auth">
+      <h2>Mit Passkey anmelden</h2>
+      <p>Passwortlose Anmeldung über Face ID, Touch ID oder Sicherheitsschlüssel.</p>
+      <button id="login" class="primary">Mit Passkey anmelden</button>
+      <div id="bootstrap" hidden>
+        <div class="separator">Einmalige Einrichtung des ersten Administrators</div>
+        <label for="bootstrapName">Dein Name</label>
+        <input id="bootstrapName" maxlength="80" placeholder="Name des Administrators" autocomplete="name">
+        <label for="bootstrapCode">Einmalcode aus der Serverkonfiguration</label>
+        <input id="bootstrapCode" type="password" autocomplete="off" spellcheck="false" placeholder="BOOTSTRAP_OTP">
+        <button id="bootstrapRegister">Administrator mit Passkey anlegen</button>
+        <p class="hint">Der Code ist nach der ersten erfolgreichen Registrierung dauerhaft verbraucht.</p>
+      </div>
+      <div class="separator">Weitere Benutzer: Einladung verwenden</div>
+      <label for="invite">Einladungscode</label>
+      <input id="invite" type="text" autocomplete="off" spellcheck="false" placeholder="Einladungscode eingeben">
+      <button id="register">Benutzerkonto mit Passkey erstellen</button>
+      <p class="hint">Auf dem iPhone: über Safari zuerst zum Home-Bildschirm hinzufügen und die PWA anschließend von dort starten.</p>
+    </section>
+    <div id="account" hidden>
+      <section class="panel">
+        <div class="heading-row"><div><h2 id="welcome">Mein Konto</h2></div></div>
+
+      </section>
+      <section class="panel" id="inboxPanel">
+        <div class="heading-row messages-heading">
+          <h2>Nachrichten</h2>
+          <button id="openSend" type="button" class="primary" hidden><span aria-hidden="true">＋</span> Neue Nachricht</button>
+        </div>
+        <div id="messageTabs" class="message-tabs" role="tablist" aria-label="Nachrichten">
+          <button id="receivedTab" type="button" role="tab" aria-selected="true" aria-controls="receivedPanel" tabindex="0">Empfangen <span id="unreadBadge" class="count" hidden></span></button>
+          <button id="sentTab" type="button" role="tab" aria-selected="false" aria-controls="sentPanel" tabindex="-1">Gesendet</button>
+        </div>
+        <div class="message-toolbar">
+          <div class="toolbar-actions">
+            <button id="refreshInbox" type="button" class="small quiet refresh-control" aria-label="Aktualisieren" title="Aktualisieren"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3A7 7 0 0 0 17.9 17"/></svg><span class="button-label">Aktualisieren</span></button>
+            <button id="refreshSentMessages" type="button" class="small quiet refresh-control" aria-label="Aktualisieren" title="Aktualisieren" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3A7 7 0 0 0 17.9 17"/></svg><span class="button-label">Aktualisieren</span></button>
+            <button id="readAll" type="button" class="small quiet">Alle gelesen</button>
+          </div>
+        </div>
+        <div id="receivedPanel" role="tabpanel" aria-labelledby="receivedTab" tabindex="0">
+          <div id="inbox" class="list" aria-live="polite"></div>
+        </div>
+        <div id="sentPanel" role="tabpanel" aria-labelledby="sentTab" tabindex="0" hidden>
+          <button id="cleanupSentMessages" type="button" class="small danger">Alle gesendeten Nachrichten löschen</button>
+          <div id="sentMessages" class="list" aria-live="polite"></div>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>Geräte</h2>
+        <h3>Dieses Gerät registrieren</h3>
+        <p class="hint">Jeder Browser und jede installierte Web-App benötigt eine eigene Push-Registrierung.</p>
+        <label for="deviceName">Gerätename</label>
+        <input id="deviceName" maxlength="80" placeholder="z. B. Mein iPhone" value="Mein Gerät">
+        <button id="subscribe" class="primary">Push auf diesem Gerät aktivieren</button>
+        <h3>Registrierte Geräte</h3>
+        <div id="devices" class="list"></div>
+      </section>
+      <section class="panel">
+        <section class="account-section"><h3>Einstellungen</h3><label for="accountLanguage">Sprache der Benutzeroberfläche</label><select id="accountLanguage"><option value="de">Deutsch</option><option value="en">English</option></select><p class="hint">Diese Einstellung wird in deinem Konto gespeichert und auf allen Geräten verwendet.</p>
+        <h3>Erscheinungsbild</h3>
+        <label for="accountTheme">Design</label>
+        <select id="accountTheme"><option value="auto">Automatisch (System)</option><option value="light">Hell</option><option value="dark">Dunkel</option></select>
+        <p class="hint">Automatisch folgt dem hellen oder dunklen Erscheinungsbild deines Geräts.</p>
+        </section><section class="account-section"><h3>Sicherheit</h3>
+        <p id="passkeyCount" class="hint"></p>
+        <button id="addPasskey">Weiteren Passkey hinzufügen</button>
+        </section><section class="account-section"><h3>API-Schlüssel</h3>
+        <p class="hint">Für die CLI: Senden nur an dein eigenes Konto und deine Geräte. Jeder Schlüssel kann einzeln widerrufen werden.</p>
+        <label for="apiKeyName">Name des API-Schlüssels</label>
+        <input id="apiKeyName" maxlength="80" autocomplete="off">
+        <button id="createApiKey">API-Schlüssel erstellen</button>
+        <div id="newApiKey" hidden>
+          <p class="hint">Kopiere den Schlüssel jetzt. Er wird nur einmal angezeigt.</p>
+          <label for="apiKeySecret">Neuer API-Schlüssel</label>
+          <textarea id="apiKeySecret" readonly spellcheck="false" autocomplete="off"></textarea>
+          <button id="hideApiKey">Schlüssel ausblenden</button>
+        </div>
+        <div id="apiKeys" class="list"></div></section>
+      </section>
+      <section class="panel admin-panel" id="adminPanel" hidden>
+        <div class="heading-row"><div><h2>Administration</h2></div><span class="admin-tag">ADMIN</span></div>
+        <h3>Einstellungen</h3>
+        <h3>Benachrichtigung senden</h3>
+        <div class="form-grid">
+          <div><label for="targetType">Empfänger-Typ</label><select id="targetType"><option value="topic">Topic</option><option value="user">Benutzer</option><option value="broadcast">Alle Benutzer</option></select></div>
+          <div id="sendTargetField"><label for="sendTarget">Empfänger</label><select id="sendTarget"></select></div>
+        </div>
+        <div id="deviceSelection" hidden>
+          <div class="device-summary"><span id="deviceSummary" aria-live="polite"></span><button id="changeDevices" type="button" class="small" aria-expanded="false" aria-controls="devicePicker">Ändern</button></div>
+          <div id="devicePicker" hidden>
+            <label class="check-row"><input type="checkbox" id="allDevices" checked> Alle Geräte</label>
+            <div id="targetDevices"></div>
+            <button id="doneDevices" type="button" class="small">Fertig</button>
+          </div>
+        </div><p id="recipientSummary" class="hint"></p>
+        <label for="sendTitle">Titel</label>
+        <input id="sendTitle" maxlength="160" placeholder="Systemmeldung" value="Push">
+        <label for="sendBody">Nachricht</label>
+        <textarea id="sendBody" rows="3" maxlength="2000" placeholder="Nachricht eingeben"></textarea>
+        <details id="sendMore" class="compose-details">
+          <summary>Langtext hinzufügen</summary>
+          <label for="sendLongText">Optionaler Langtext (bis 256 KB)</label>
+          <textarea id="sendLongText" rows="4" maxlength="262144" placeholder="Details, Fehlerprotokoll oder ausführliche Beschreibung"></textarea>
+          <p class="hint">Nur in der App sichtbar, nicht in der Push-Benachrichtigung.</p>
+        </details>
+        <div class="dialog-actions"><button id="cancelSend" type="button">Abbrechen</button><button id="adminSend" type="button" class="primary">Nachricht senden</button></div>
+        <p id="sendResult" class="hint" aria-live="polite"></p>
+        <button id="refreshDeliveryStatus" class="small" hidden>Zustellstatus aktualisieren</button>
+        <div id="inviteSection" class="heading-row"><div><h2>Benutzerverwaltung</h2><p class="hint">Konten und Administratorrechte verwalten.</p></div><button id="refreshUsers" class="small">Aktualisieren</button></div>
+        <div id="adminUsers" class="list" aria-live="polite"></div>
+        <h3>Benutzer einladen</h3>
+        <label for="inviteName">Benutzername</label>
+        <input id="inviteName" maxlength="80" placeholder="Name des neuen Benutzers">
+        <button id="createInvite">Einmaligen Einladungscode erstellen</button>
+        <div id="inviteResult" class="secret-display" hidden></div>
+        <h3>Integrationsschlüssel</h3>
+        <p class="hint">Für Watchtower und Topic-Versand. Unabhängig von persönlichen Konten.</p>
+        <label for="integrationKeyName">Name der Integration</label>
+        <input id="integrationKeyName" maxlength="80" placeholder="z. B. Watchtower">
+        <button id="createIntegrationKey">Integrationsschlüssel erstellen</button>
+        <div id="newIntegrationKey" hidden>
+          <p class="hint">Kopiere den Schlüssel jetzt. Er wird nur einmal angezeigt.</p>
+          <label for="integrationKeySecret">Neuer API-Schlüssel</label>
+          <textarea id="integrationKeySecret" readonly spellcheck="false"></textarea>
+          <button id="hideIntegrationKey">Schlüssel ausblenden</button>
+        </div>
+        <div id="integrationKeys" class="list"></div>
+        <div class="separator" id="topicSection">Topic anlegen</div>
+        <label for="topicName">Topic-Name</label>
+        <input id="topicName" maxlength="40" placeholder="z. B. homeserver">
+        <label for="topicDescription">Beschreibung</label>
+        <input id="topicDescription" maxlength="200" placeholder="Benachrichtigungen zu meinem Server">
+        <button id="createTopic">Topic hinzufügen</button>
+        <div class="separator" id="storageSection">SQLite-Datenbank: Statistiken und Wartung</div>
+        <div class="heading-row">
+          <div><h3>Datenbankstatistik</h3><p class="hint">Werte für alle Benutzer und registrierten Geräte</p></div>
+          <button id="refreshStorageStats" class="small">Aktualisieren</button>
+        </div>
+        <div id="storageStats" class="storage-stats" aria-live="polite"><p class="hint">Statistik wird geladen.</p></div>
+        <h3>Alte Datensätze bereinigen</h3>
+        <p class="hint">Keine automatische Löschung. Zuerst Vorschau anzeigen, dann ausdrücklich bestätigen. Laufende Push-Zustellungen bleiben erhalten.</p>
+        <div class="settings-grid">
+          <div><label for="cleanupMessageDays">Nachrichten älter als (Tage)</label><input id="cleanupMessageDays" type="number" min="1" max="3650" value="90"></div>
+          <div><label for="cleanupDeliveryDays">Abgeschlossene Zustellungen älter als (Tage)</label><input id="cleanupDeliveryDays" type="number" min="1" max="3650" value="30"></div>
+        </div>
+        <label class="check-row" for="cleanupUnread"><input id="cleanupUnread" type="checkbox"> Auch ungelesene alte Nachrichten löschen (standardmäßig geschützt)</label>
+        <button id="previewStorageCleanup">Löschvorschau berechnen</button>
+        <div id="cleanupPreview" class="storage-preview" role="status" aria-live="polite" hidden></div>
+        <label for="cleanupConfirmation">Zum Löschen <b>LÖSCHEN</b> eingeben</label>
+        <input id="cleanupConfirmation" type="text" autocomplete="off" spellcheck="false" placeholder="LÖSCHEN">
+        <button id="executeStorageCleanup" class="danger" disabled>Vorgeschlagene Daten löschen</button>
+        <p class="hint">Alte, abgelaufene Einladungen und Idempotenzschlüssel werden dabei ebenfalls entfernt. Ein DB-Backup vor der Bereinigung wird empfohlen.</p>
+        <h3>Speicherplatz optimieren</h3>
+        <p class="hint">SQLite führt einen WAL-Checkpoint und VACUUM aus. Es werden keine weiteren Inhalte gelöscht. Für VACUUM kann vorübergehend zusätzlicher freier Speicher erforderlich sein.</p>
+        <button id="compactStorage">SQLite optimieren (VACUUM)</button>
+        <p id="storageResult" class="hint" role="status" aria-live="polite"></p>
+      </section>
+</div>
+    <p role="status" aria-live="polite" id="status"></p>
+    <footer>pushie · v<span id="appVersion">__PUSHIE_VERSION__</span></footer>
+  </main>
+  <script src="/i18n.js?v=__PUSHIE_VERSION__"></script>
+  <script src="/version.js?v=__PUSHIE_VERSION__" defer></script>
+  <script src="/trace.js?v=__PUSHIE_VERSION__" defer></script>
+  <script src="/sync.js?v=__PUSHIE_VERSION__" defer></script>
+  <script src="/app.js?v=__PUSHIE_VERSION__" defer></script>
+  <script src="/pull-refresh.js?v=__PUSHIE_VERSION__" defer></script>
+</body>
+</html>
