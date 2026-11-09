@@ -95,7 +95,6 @@ set +a
 - [Logs and troubleshooting](docs/LOGGING.md)
 - [Live sync and proxy requirements](docs/LIVE_SYNC.md)
 - [iOS notification checks](docs/IOS_NOTIFICATION_TESTING.md)
-- [Security and deployment limits](docs/SECURITY_REVIEW.md)
 
 Source lives in `src/`. Docker stores data in `shared-data/`, mounted at `/data`.
 Credentials, databases, and local build outputs are excluded from Git.
