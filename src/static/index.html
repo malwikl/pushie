@@ -56,17 +56,24 @@
       <section class="panel" id="inboxPanel">
         <div class="heading-row messages-heading">
           <h2>Nachrichten</h2>
-          <button id="openSend" type="button" class="primary" hidden><span aria-hidden="true">＋</span> Neue Nachricht</button>
         </div>
         <div id="messageTabs" class="message-tabs" role="tablist" aria-label="Nachrichten">
           <button id="receivedTab" type="button" role="tab" aria-selected="true" aria-controls="receivedPanel" tabindex="0">Empfangen <span id="unreadBadge" class="count" hidden></span></button>
           <button id="sentTab" type="button" role="tab" aria-selected="false" aria-controls="sentPanel" tabindex="-1">Gesendet</button>
         </div>
         <div class="message-toolbar">
+          <button id="openSend" type="button" class="primary" hidden><span aria-hidden="true">＋</span> Neue Nachricht</button>
           <div class="toolbar-actions">
+            <button id="readAll" type="button" class="small quiet" hidden>Alle gelesen</button>
+            <details id="messageActions" class="message-actions">
+              <summary>Weitere Aktionen</summary>
+              <div class="message-actions-menu">
             <button id="refreshInbox" type="button" class="small quiet refresh-control" aria-label="Aktualisieren" title="Aktualisieren"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3A7 7 0 0 0 17.9 17"/></svg><span class="button-label">Aktualisieren</span></button>
             <button id="refreshSentMessages" type="button" class="small quiet refresh-control" aria-label="Aktualisieren" title="Aktualisieren" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3A7 7 0 0 0 17.9 17"/></svg><span class="button-label">Aktualisieren</span></button>
-            <button id="readAll" type="button" class="small quiet">Alle gelesen</button>
+                <button id="cleanupInboxMessages" type="button" class="small danger">Alle löschen …</button>
+                <button id="cleanupSentMessages" type="button" class="small danger" hidden>Alle löschen …</button>
+              </div>
+            </details>
           </div>
         </div>
         <div id="receivedPanel" role="tabpanel" aria-labelledby="receivedTab" tabindex="0">
@@ -75,7 +82,6 @@
         </div>
         <div id="sentPanel" role="tabpanel" aria-labelledby="sentTab" tabindex="0" hidden>
           <div id="sentFilters" class="message-filters" role="group" aria-label="Nach Topic filtern"></div>
-          <button id="cleanupSentMessages" type="button" class="small danger">Alle gesendeten Nachrichten löschen</button>
           <div id="sentMessages" class="list" aria-live="polite"></div>
         </div>
       </section>
@@ -100,6 +106,9 @@
         <h3>Nachrichten lesen</h3>
         <label class="check-row"><input id="manualRead" type="checkbox" role="switch"> Nachrichten manuell als gelesen markieren</label>
         <p class="hint">Wenn aktiviert, bleiben Nachrichten beim Öffnen und beim Antippen einer Push-Benachrichtigung ungelesen. Verwende Gelesen oder Alle gelesen.</p>
+        <h3>Geräteeinrichtung</h3>
+        <p class="hint">Installationshinweise und Push-Registrierung für dieses Gerät erneut öffnen.</p>
+        <button id="restartOnboarding" type="button">Einrichtung erneut starten</button>
         </section><section class="account-section"><h3>Sicherheit</h3>
         <p id="passkeyCount" class="hint"></p>
         <button id="addPasskey">Weiteren Passkey hinzufügen</button>

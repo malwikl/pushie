@@ -19,6 +19,7 @@ var topicRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,39}$`)
 
 func (a *application) userRoutes(mux *http.ServeMux) {
 	a.personalKeyRoutes(mux)
+	a.messageCleanupRoutes(mux)
 	mux.HandleFunc("PUT /api/me/settings", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
 		if !a.rateLimit(w, r) {
 			return
@@ -108,9 +109,7 @@ func (a *application) userRoutes(mux *http.ServeMux) {
 		reply(w, 200, map[string]int{"deleted": count})
 	}))
 	mux.HandleFunc("POST /api/me/sent-messages/cleanup", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
-		var req struct {
-			Confirm string `json:"confirm"`
-		}
+		var req messageCleanupRequest
 		if !decode(w, r, &req) {
 			return
 		}
@@ -118,8 +117,21 @@ func (a *application) userRoutes(mux *http.ServeMux) {
 			failure(w, 400, "Bestätigung erforderlich")
 			return
 		}
+		if req.IDs != nil && !validMessageSelection(req.IDs) {
+			failure(w, 400, "Nachrichtenauswahl ungültig")
+			return
+		}
 		count := 0
-		if err := a.db.update(func(db *database) error { count = hideSentMessages(db, u.ID, ""); return nil }); err != nil {
+		if err := a.db.update(func(db *database) error {
+			if req.IDs == nil {
+				count = hideSentMessages(db, u.ID, "")
+			} else {
+				for _, id := range req.IDs {
+					count += hideSentMessages(db, u.ID, id)
+				}
+			}
+			return nil
+		}); err != nil {
 			failure(w, 500, "Speichern fehlgeschlagen")
 			return
 		}

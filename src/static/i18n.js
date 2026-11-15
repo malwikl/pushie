@@ -1,5 +1,14 @@
 'use strict';
 const translations = {
+ "Weitere Aktionen": "More actions",
+ "Alle löschen …": "Delete all …",
+ "Angezeigte löschen …": "Delete shown …",
+ "Nachrichten gelöscht.": "Messages deleted.",
+ "Empfänger und Zustellungen bleiben erhalten.": "Recipient inboxes and deliveries are preserved.",
+ "Geräteeinrichtung": "Device setup",
+ "Einrichtung erneut starten": "Restart setup",
+ "Installationshinweise und Push-Registrierung für dieses Gerät erneut öffnen.": "Reopen installation guidance and push registration for this device.",
+ "Nachrichtenauswahl ungültig": "Invalid message selection",
  "mehr": "more",
  "weniger": "less",
  "Alle": "All",

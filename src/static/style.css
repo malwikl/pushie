@@ -84,7 +84,16 @@ html[data-theme="dark"] .primary:hover { background: #1b57af; }
 .message-tabs [role="tab"][aria-selected="true"] { border-bottom-color: var(--blue); color: var(--blue); }
 .count { padding: 1px 6px; border-radius: 12px; background: var(--blue); color: var(--card); font-size: 11px; font-weight: 700; }
 .message-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; padding: 7px 0; }
-.toolbar-actions { gap: 0; }
+.message-toolbar > button { margin: 0; }
+.message-toolbar .toolbar-actions { gap: 6px; margin-left: auto; }
+.message-actions { position: relative; margin: 0; }
+.message-actions > summary { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 6px 10px; border: 1px solid var(--control); border-radius: 7px; color: var(--text); list-style: none; }
+.message-actions > summary::-webkit-details-marker { display: none; }
+.message-actions > summary::after { content: '▾'; color: var(--muted); }
+.message-actions-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 15; min-width: 200px; max-width: calc(100vw - 48px); padding: 6px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); box-shadow: 0 8px 24px #0002; }
+.message-actions-menu button { display: flex; width: 100%; justify-content: flex-start; margin: 0; border-color: transparent; text-align: left; }
+.message-actions-menu .refresh-control .button-label { display: inline; }
+.message-actions-menu .danger { border-top: 1px solid var(--line); border-radius: 0; }
 .refresh-control { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .refresh-control svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .log-toggle { min-height: 34px; margin: 0; font-size: 12px; color: var(--muted); cursor: pointer; }
@@ -193,6 +202,7 @@ footer { padding-top: 4px; text-align: center; font-size: 11px; color: var(--mut
   .refresh-control { min-width: 38px; }
 }
 @media (pointer: coarse) {
+  .message-actions > summary { min-height: 44px; }
   button, .small, input, select, .message-tabs [role="tab"], .icon-button, .menu-popover button { min-height: 44px; }
   .icon-button { width: 44px; height: 44px; }
   .log-toggle, .check-row, #targetDevices label, summary { min-height: 44px; }

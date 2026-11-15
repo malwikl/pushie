@@ -247,7 +247,8 @@ function setMessageTab(tab,{focus=false}={}){
   }
   $('refreshInbox').hidden=activeMessageTab!=='received';
   $('refreshSentMessages').hidden=activeMessageTab!=='sent';
-  $('readAll').hidden=activeMessageTab!=='received';
+  $('messageActions').open=false;
+  updateMessageActions();
   (activeMessageTab==='sent'?sentMessageList:receivedMessageList)?.scheduleLayout();
 }
 for(const name of ['received','sent'])$(name+'Tab').addEventListener('click',()=>setMessageTab(name));
@@ -279,23 +280,48 @@ function getMessageList(sent=false){
       await api(`/api/me/${sent?'sent-messages':'messages'}/${encodeURIComponent(message.id)}`,'DELETE',{});
       await (sent?refreshSentMessages():refreshInbox());
     }),
-    onFilter:sent?undefined:(visible,filter)=>{
-      $('readAll').disabled=!visible.some(message=>!message.readAt);
-      $('readAll').textContent=t(filter?'Angezeigte gelesen':'Alle gelesen');
-    }
+    onFilter:()=>updateMessageActions()
   });
   if(sent)sentMessageList=list;else receivedMessageList=list;
   return list;
 }
 function renderSentMessages(){
-  $('cleanupSentMessages').disabled=!sentMessages.length;
   getMessageList(true).update(sentMessages);
 }
-$('refreshSentMessages').addEventListener('click',()=>run($('refreshSentMessages'),refreshSentMessages));
-$('cleanupSentMessages').onclick=()=>{
-  if(!confirm(t('Alle gesendeten Nachrichten aus deinem Verlauf löschen? Empfänger und Zustellungen bleiben erhalten.')))return;
-  run($('cleanupSentMessages'),async()=>{await api('/api/me/sent-messages/cleanup','POST',{confirm:'LÖSCHEN'});await refreshSentMessages()});
-};
+function updateMessageActions(){
+  const sent=activeMessageTab==='sent',list=sent?sentMessageList:receivedMessageList;
+  const visible=list?list.visible():(sent?sentMessages:inboxMessages),filtered=!!list?.filter;
+  const unread=visible.some(message=>!message.readAt);
+  $('readAll').hidden=sent||!unread;$('readAll').disabled=!unread;
+  $('readAll').textContent=t(filtered?'Angezeigte gelesen':'Alle gelesen');
+  for(const [id,isSent] of [['cleanupInboxMessages',false],['cleanupSentMessages',true]]){
+    const button=$(id);button.hidden=sent!==isSent;button.disabled=!visible.length;
+    button.textContent=t(filtered?'Angezeigte löschen …':'Alle löschen …');
+  }
+}
+function closeMessageActions(focus=false){
+  $('messageActions').open=false;if(focus)$('messageActions').querySelector('summary').focus();
+}
+async function cleanupMessageList(sent){
+  const list=getMessageList(sent),ids=list.visible().map(message=>message.id);
+  if(!ids.length)return;
+  const view=t(sent?'Gesendet':'Empfangen'),filter=list.filter?list.label(list.filter):t('Alle');
+  const question=language==='en'?`Delete ${ids.length} messages from “${view}” (${filter})?`:`${ids.length} Nachrichten aus „${view}“ (${filter}) löschen?`;
+  const note=sent?t('Empfänger und Zustellungen bleiben erhalten.'):'';
+  if(!confirm(question+(note?'\n'+note:'')))return;
+  closeMessageActions(true);
+  await run($(sent?'cleanupSentMessages':'cleanupInboxMessages'),async()=>{
+    await api(`/api/me/${sent?'sent-messages':'messages'}/cleanup`,'POST',{confirm:'LÖSCHEN',ids});
+    await (sent?refreshSentMessages():refreshInbox());status(t('Nachrichten gelöscht.'));
+  });
+  updateMessageActions();
+}
+$('refreshSentMessages').addEventListener('click',()=>{closeMessageActions(true);run($('refreshSentMessages'),refreshSentMessages)});
+$('cleanupSentMessages').onclick=()=>cleanupMessageList(true);
+$('cleanupInboxMessages').onclick=()=>cleanupMessageList(false);
+document.addEventListener('click',event=>{if(!event.target.closest('#messageActions'))closeMessageActions()});
+document.addEventListener('focusin',event=>{if(!event.target.closest('#messageActions'))closeMessageActions()});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&$('messageActions').open){event.preventDefault();closeMessageActions(true)}});
 let lastSentMessageId = null;
 const deliveryLabels = {pending:"ausstehend",sending:"wird gesendet",retry:"Retry",accepted:"vom Push-Dienst angenommen",confirmed:"vom Browser bestätigt",unconfirmed:"nicht bestätigt",failed:"fehlgeschlagen"};
 function formatDate(value){return new Date(value).toLocaleString(locale(),{dateStyle:'medium',timeStyle:'short'})}
@@ -425,7 +451,7 @@ function renderSendTargets(){
  renderTargetDevices();
 }
 $('targetType').addEventListener('change',renderSendTargets);
-$('refreshInbox').addEventListener('click',()=>run($('refreshInbox'),async()=>{window.retryLiveSync?.();await refreshInbox();status(t('Posteingang aktualisiert.'))}));
+$('refreshInbox').addEventListener('click',()=>{closeMessageActions(true);run($('refreshInbox'),async()=>{window.retryLiveSync?.();await refreshInbox();status(t('Posteingang aktualisiert.'))})});
 $('readAll').addEventListener('click',()=>run($('readAll'),async()=>{
   const filter=receivedMessageList?.filter || '';
   await api('/api/me/messages/read-all','POST',window.PushieMessages.readFilter(filter));

@@ -51,6 +51,7 @@ test('permission denial keeps setup open, preserves the name and offers retry/se
 test('Later saves completion; existing users can reopen device setup and logout clears it',async()=>{
  const f=fixture();f.onboarding.update(f.profile);await f.$('onboardingLater').onclick();assert.equal(f.$('onboardingDialog').open,false);assert.equal(f.profile.onboardingComplete,true);
  f.onboarding.update(f.profile);assert.equal(f.$('onboardingDialog').open,false);f.$('setupDevice').onclick();assert.equal(f.$('onboardingDialog').open,true);
+ f.onboarding.reset();f.$('restartOnboarding').onclick();assert.equal(f.$('onboardingDialog').open,true);
  f.onboarding.reset();assert.equal(f.$('onboardingDialog').open,false);assert.equal(f.$('onboardingDeviceName').value,'');
  const existing=fixture({devices:[{id:'registered'}]});existing.onboarding.update(existing.profile);assert.equal(existing.$('onboardingDialog').open,false);
 });

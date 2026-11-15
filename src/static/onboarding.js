@@ -76,6 +76,7 @@
       renderStep();if(!dialog.open)dialog.showModal();
     }
     $('setupDevice').onclick=open;
+    $('restartOnboarding').onclick=open;
     $('onboardingNext').onclick=()=>{step=2;feedback('');renderStep();$('onboardingDeviceName').focus()};
     $('onboardingBack').onclick=()=>{step=1;feedback('');renderStep()};
     $('onboardingLater').onclick=async()=>{

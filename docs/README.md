@@ -93,6 +93,14 @@ tab, including messages from deleted topics. Direct messages and broadcasts
 have separate filters. Counts include read and unread messages. **Mark shown as
 read** affects only the selected filter; the unread badge counts the whole inbox.
 
+Both tabs share the same toolbar. **New message** remains available to accounts
+with sending permission. The read-all action appears only in Received when the
+visible messages include unread entries. **Refresh** and **Delete all …** are
+under **More actions**; with a filter selected, deletion is labeled **Delete
+shown …**. Deletion confirms the number, tab, and filter and acts on that exact
+selection, leaving newer incoming messages alone. Deleting sent history does
+not remove recipient inbox copies or interrupt delivery.
+
 Under **Account settings → Reading messages**, enable **Mark messages as read
 manually** to keep messages unread when expanding them or tapping a push
 notification. Use **Read** or **Mark all as read** explicitly. This account
@@ -128,6 +136,8 @@ suggested. Browsers generally do not expose the user's custom operating-system
 device name. Choosing **Later** dismisses the guide and saves completion; reopen
 it anytime under **Devices → Set up this device**. Configured accounts are not
 interrupted by onboarding after an update.
+The same guide is available under **Account settings → Device setup → Restart
+setup**, including after onboarding has already been completed.
 
 - **iPhone/iPad:** add Pushie to the Home Screen and open it from that icon before
   enabling push (iOS/iPadOS 16.4 or later). The guide includes Safari Share → Add
