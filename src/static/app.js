@@ -479,7 +479,7 @@ $('adminSend').addEventListener('click',()=>run($('adminSend'),async()=>{
   await api('/api/admin/send','POST',payload);
   $('sendDialog').close();
   resetSendContext();
-  await refreshInbox();setMessageTab('sent',{focus:true});status(t('Nachricht verarbeitet.'));
+  await refreshInbox();status(t('Nachricht verarbeitet.'));
 }));
 $('refreshDeliveryStatus').addEventListener('click',()=>run($('refreshDeliveryStatus'),async()=>{
   if (!lastSentMessageId) return;
