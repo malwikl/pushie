@@ -246,6 +246,7 @@ func (a *application) routes() http.Handler {
 	mux.HandleFunc("GET /api/me/sync", a.requireUser(a.syncSocket))
 	a.authRoutes(mux)
 	a.userRoutes(mux)
+	a.topicAPIRoutes(mux)
 	a.adminRoutes(mux)
 	a.storageAdminRoutes(mux)
 	mux.HandleFunc("POST /api/send", a.sendHandler)

@@ -1,6 +1,6 @@
 # Home Assistant notification integration plan
 
-Status: proposed; updated 2026-11-15. This plan does not configure services or send notifications.
+Status: implemented locally on 2026-11-15. The custom component is maintained in the separate `/srv/pushie-home-assistant` Git repository. Server topic/verification endpoints are implemented here. Deployment and end-to-end validation on the actual Home Assistant host remain pending; no live notifications have been sent.
 
 ## Intended result
 

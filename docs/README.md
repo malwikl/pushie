@@ -325,3 +325,13 @@ data directory. The original JSON is retained; it is not kept in sync.
 Limits: 20 devices per user, 1,000 active deliveries per user, 10,000 globally,
 and a 128 MiB serialized-state growth guard. This is a single-server tool;
 large deployments need a different storage architecture.
+
+### Home Assistant topic API
+
+`GET /api/topics` returns sorted `topics` containing names and descriptions.
+`POST /api/verify` accepts `{}` or `{"topic":"automation"}` and returns
+`ok`, `apiVersion: 1`, and capabilities `topics:list`, `topics:send`, `verify`.
+These routes require `SEND_TOKEN`; verification never sends or writes messages.
+Unknown topics return 404 and unsupported request fields return 400. Both
+routes apply rate limiting and reject a mismatched browser Origin.
+The separate `/srv/pushie-home-assistant` repository supplies the custom component.
