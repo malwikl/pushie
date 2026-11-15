@@ -204,13 +204,13 @@ async function refreshIntegrationKeys(){
  const response=await api('/api/admin/integration-keys');const list=$('integrationKeys');list.replaceChildren();
  for(const key of response.keys){
   const item=row(),detail=document.createElement('div'),name=document.createElement('b'),date=document.createElement('span'),remove=document.createElement('button');
-  name.textContent=key.name;date.textContent=formatDate(key.createdAt);detail.append(name,date);remove.textContent=t('Widerrufen');remove.className='small danger';item.append(detail,remove);list.append(item);
+  name.textContent=key.name;date.textContent=formatDate(key.createdAt)+' · '+t(key.scope==='send'?'Alle Senderechte (Home Assistant)':'Nur Watchtower');detail.append(name,date);remove.textContent=t('Widerrufen');remove.className='small danger';item.append(detail,remove);list.append(item);
   remove.onclick=()=>{if(!confirm(t('Integrationsschlüssel widerrufen?')))return;run(remove,async()=>{await api('/api/admin/integration-keys/'+encodeURIComponent(key.id),'DELETE',{});$('integrationKeySecret').value='';$('newIntegrationKey').hidden=true;await refreshIntegrationKeys();status(t('Integrationsschlüssel widerrufen.'))})};
  }
 }
 $('createIntegrationKey').onclick=()=>run($('createIntegrationKey'),async()=>{
  $('integrationKeySecret').value='';$('newIntegrationKey').hidden=true;
- const result=await api('/api/admin/integration-keys','POST',{name:$('integrationKeyName').value.trim()});
+ const result=await api('/api/admin/integration-keys','POST',{name:$('integrationKeyName').value.trim(),scope:$('integrationKeyScope').value});
  $('integrationKeySecret').value=result.token;$('newIntegrationKey').hidden=false;$('integrationKeyName').value='';await refreshIntegrationKeys();
 });
 $('hideIntegrationKey').onclick=()=>{$('integrationKeySecret').value='';$('newIntegrationKey').hidden=true};

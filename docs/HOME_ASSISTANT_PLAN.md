@@ -15,7 +15,7 @@ A custom integration is now the recommended implementation because topic discove
 - Source and Compose configuration: `/srv/pushie`.
 - Public origin: `https://pushie.new-server.kloeffer.de`. Check reachability from the actual HA host.
 - Existing sending: `POST /api/send`, JSON, with `Authorization: Bearer TOKEN`.
-- Topic sends currently require `SEND_TOKEN`. Personal API keys cannot send to topics; existing Integration keys are for Watchtower. The HA integration must not need `ADMIN_TOKEN`.
+- Topic sends accept `SEND_TOKEN` or Integration keys created with **All sending** permission. Personal API keys cannot send to topics; legacy Integration keys remain Watchtower-only. The HA integration does not need `ADMIN_TOKEN`.
 - `SEND_TOKEN` has broader server-side privileges than this topic-only integration exposes. Topic-scoped credentials can be a separate enhancement; a topic-only UI does not restrict the token itself.
 - Existing browser-session topic routes are unsuitable for this API client. Do not use `/api/admin/targets`, which also returns users and devices.
 - Pushie already implements durable delivery, inbox storage, provider retries, delivery status, and idempotency.

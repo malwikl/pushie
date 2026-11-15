@@ -8,21 +8,18 @@ import (
 // Topic integration endpoints never return account or device information.
 func (a *application) topicAPIRoutes(mux *http.ServeMux) {
 	authorize := func(w http.ResponseWriter, r *http.Request) bool {
-		if !authorized(r, a.cfg.sendToken) {
-			if checked, ok := a.authorizeSend(w, r); ok {
-				_ = checked
-				reply(w, 403, map[string]string{"error": "topic_permission_required"})
-			}
+		checked, ok := a.authorizeSend(w, r)
+		if !ok {
 			return false
 		}
-		if !a.rateLimit(w, r) {
+		if _, personal := checked.Context().Value(personalSenderContext{}).(personalSender); personal {
+			reply(w, 403, map[string]string{"error": "topic_permission_required"})
 			return false
 		}
 		if o := r.Header.Get("Origin"); o != "" && o != a.cfg.origin {
 			reply(w, 403, map[string]string{"error": "invalid_origin"})
 			return false
 		}
-		markAuthorization(r, "", "send_token")
 		return true
 	}
 	mux.HandleFunc("GET /api/topics", func(w http.ResponseWriter, r *http.Request) {

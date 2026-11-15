@@ -162,9 +162,11 @@
         <button id="createInvite">Einmaligen Einladungscode erstellen</button>
         <div id="inviteResult" class="secret-display" hidden></div>
         <h3>Integrationsschlüssel</h3>
-        <p class="hint">Für Watchtower und Topic-Versand. Unabhängig von persönlichen Konten.</p>
+        <p class="hint">Unabhängig von persönlichen Konten. Alle Senderechte erlauben Themen, Benutzer, Geräte und Rundsendungen.</p>
         <label for="integrationKeyName">Name der Integration</label>
         <input id="integrationKeyName" maxlength="80" placeholder="z. B. Watchtower">
+        <label for="integrationKeyScope">Berechtigung</label>
+        <select id="integrationKeyScope"><option value="watchtower">Nur Watchtower</option><option value="send">Alle Senderechte (Home Assistant)</option></select>
         <button id="createIntegrationKey">Integrationsschlüssel erstellen</button>
         <div id="newIntegrationKey" hidden>
           <p class="hint">Kopiere den Schlüssel jetzt. Er wird nur einmal angezeigt.</p>

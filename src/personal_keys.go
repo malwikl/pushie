@@ -11,6 +11,7 @@ import (
 
 // Only the hash is persisted; the bearer secret is returned once at creation.
 type personalAPIKey struct {
+	Scope     string    `json:"scope,omitempty"`
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Hash      string    `json:"hash"`
@@ -47,6 +48,25 @@ func (a *application) authorizeSend(w http.ResponseWriter, r *http.Request) (*ht
 		return r, true
 	}
 	header := r.Header.Get("Authorization")
+	if strings.HasPrefix(header, "Bearer isk.") {
+		token := strings.TrimPrefix(header, "Bearer ")
+		hash := invitationHash(token)
+		a.db.mu.RLock()
+		valid := len(token) <= 256 && integrationKeyCanSend(a.db.db.IntegrationKeys, hash)
+		a.db.mu.RUnlock()
+		if !valid {
+			failure(w, 401, "API-Schlüssel ungültig")
+			return r, false
+		}
+		if !a.auth.allow("integration:"+hash, 90) {
+			w.Header().Set("Retry-After", "60")
+			failure(w, 429, "Zu viele Anfragen")
+			return r, false
+		}
+		markAuthorization(r, "", "integration_key")
+		return r.WithContext(context.WithValue(r.Context(), integrationSenderContext{}, hash)), true
+	}
+
 	if !strings.HasPrefix(header, "Bearer ") {
 		failure(w, 401, "API-Schlüssel ungültig")
 		return r, false

@@ -173,7 +173,7 @@ Keep the public hostname stable: passkeys are tied to it.
 | Personal API key | Send to its owner's account/devices; query that account's personal-key sends. Create under Account → API keys. |
 | `SEND_TOKEN` | Server-wide sending and delivery status. |
 | `ADMIN_TOKEN` | Token-based user, invitation, and topic administration. Does not grant browser admin access. |
-| Integration key | Watchtower webhook only. Create under Administration → Integration keys. |
+| Integration key | Watchtower-only by default; choose **All sending (Home Assistant)** for all API sending destinations and HA topic discovery/verification. Create under Administration → Integration keys. |
 | Passkey session | Browser account features; administrators also get the web administration tools. |
 
 API tokens use `Authorization: Bearer TOKEN`. Browser writes require a valid
@@ -331,7 +331,14 @@ large deployments need a different storage architecture.
 `GET /api/topics` returns sorted `topics` containing names and descriptions.
 `POST /api/verify` accepts `{}` or `{"topic":"automation"}` and returns
 `ok`, `apiVersion: 1`, and capabilities `topics:list`, `topics:send`, `verify`.
-These routes require `SEND_TOKEN`; verification never sends or writes messages.
+These routes require `SEND_TOKEN` or an **All sending** integration key; verification never sends or writes messages.
 Unknown topics return 404 and unsupported request fields return 400. Both
 routes apply rate limiting and reject a mismatched browser Origin.
 The separate `/srv/pushie-home-assistant` repository supplies the custom component.
+
+To create a dedicated Home Assistant token, open Administration → Integration keys,
+enter a name, choose **All sending (Home Assistant)**, and create the key. Copy
+the once-shown `isk.` token into HA. Revocation takes effect on subsequent requests.
+These tokens allow topics, users, devices, broadcasts, and delivery status, but
+not administration or browser sessions. Existing keys retain Watchtower-only access.
+The key-creation API accepts `scope: "send"` or `scope: "watchtower"` (default).

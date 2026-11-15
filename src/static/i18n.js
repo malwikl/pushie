@@ -1,5 +1,9 @@
 'use strict';
 const translations = {
+ "Berechtigung": "Permission",
+ "Nur Watchtower": "Watchtower only",
+ "Alle Senderechte (Home Assistant)": "All sending (Home Assistant)",
+ "Unabhängig von persönlichen Konten. Alle Senderechte erlauben Themen, Benutzer, Geräte und Rundsendungen.": "Independent of personal accounts. All sending permits topics, users, devices and broadcasts.",
  "Zum Posteingang": "Go to inbox",
  "Weitere Aktionen": "More actions",
  "Alle löschen …": "Delete all …",

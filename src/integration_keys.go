@@ -19,8 +19,17 @@ func integrationKeyValid(keys []personalAPIKey, hash string) bool {
 	return false
 }
 
-// Integration keys are independent of user accounts and authorize only the
-// Watchtower webhook. Personal keys retain their existing account restrictions.
+// Missing scope retains legacy Watchtower-only access.
+func integrationKeyCanSend(keys []personalAPIKey, hash string) bool {
+	for _, key := range keys {
+		if key.Scope == "send" && constantBytesEqual([]byte(key.Hash), []byte(hash)) {
+			return true
+		}
+	}
+	return false
+}
+
+// Integration keys are independent of user accounts.
 func (a *application) authorizeWatchtower(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
 	if authorized(r, a.cfg.sendToken) {
 		if !a.rateLimit(w, r) {
@@ -68,18 +77,30 @@ func (a *application) integrationKeyRoutes(mux *http.ServeMux) {
 	}
 	mux.HandleFunc("GET /api/admin/integration-keys", guard(func(w http.ResponseWriter, r *http.Request) {
 		a.db.mu.RLock()
-		keys := make([]personalKeyView, 0, len(a.db.db.IntegrationKeys))
+		keys := make([]map[string]any, 0, len(a.db.db.IntegrationKeys))
 		for _, k := range a.db.db.IntegrationKeys {
-			keys = append(keys, personalKeyView{k.ID, k.Name, k.CreatedAt})
+			scope := k.Scope
+			if scope == "" {
+				scope = "watchtower"
+			}
+			keys = append(keys, map[string]any{"id": k.ID, "name": k.Name, "createdAt": k.CreatedAt, "scope": scope})
 		}
 		a.db.mu.RUnlock()
 		reply(w, 200, map[string]any{"keys": keys})
 	}))
 	mux.HandleFunc("POST /api/admin/integration-keys", guard(func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
-			Name string `json:"name"`
+			Name  string `json:"name"`
+			Scope string `json:"scope"`
 		}
 		if !decode(w, r, &in) {
+			return
+		}
+		if in.Scope == "" {
+			in.Scope = "watchtower"
+		}
+		if in.Scope != "watchtower" && in.Scope != "send" {
+			failure(w, 400, "Ungültige Berechtigung")
 			return
 		}
 		in.Name = strings.TrimSpace(in.Name)
@@ -98,7 +119,7 @@ func (a *application) integrationKeyRoutes(mux *http.ServeMux) {
 			return
 		}
 		token := "isk." + raw
-		key := personalAPIKey{ID: id, Name: in.Name, Hash: invitationHash(token), CreatedAt: time.Now().UTC()}
+		key := personalAPIKey{Scope: in.Scope, ID: id, Name: in.Name, Hash: invitationHash(token), CreatedAt: time.Now().UTC()}
 		limit := errors.New("limit")
 		err = a.db.update(func(db *database) error {
 			if len(db.IntegrationKeys) >= 100 {
