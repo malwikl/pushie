@@ -6,7 +6,7 @@ const fs=require('node:fs');
 const source=fs.readFileSync(require('node:path').join(__dirname,'../static/app.js'),'utf8');
 function fixture(){
  const fields={};let focused=null;
- for(const id of ['receivedTab','sentTab','receivedPanel','sentPanel','refreshInbox','refreshSentMessages','readAll','messageTabs','cancelSend'])fields[id]={
+ for(const id of ['receivedTab','sentTab','receivedPanel','sentPanel','refreshInbox','refreshSentMessages','readAll','messageTabs','cancelSend','inboxTopicFilterControl'])fields[id]={
   attributes:{},hidden:false,addEventListener(type,fn){this[type]=fn},setAttribute(k,v){this.attributes[k]=v},focus(){focused=id}
  };
  fields.sendDialog={open:true,close(){this.open=false}};
@@ -23,6 +23,7 @@ test('switching message tabs shows the relevant list and actions without moving 
  assert.equal(fields.receivedTab.attributes['aria-selected'],'false');assert.equal(fields.sentTab.attributes['aria-selected'],'true');
  assert.equal(fields.receivedTab.tabIndex,-1);assert.equal(fields.sentTab.tabIndex,0);
  assert.equal(fields.readAll.hidden,true);assert.equal(fields.refreshInbox.hidden,true);assert.equal(fields.refreshSentMessages.hidden,false);
+ assert.equal(fields.inboxTopicFilterControl.hidden,true);
  assert.equal(focused(),null);
  fields.receivedTab.click();assert.equal(fields.receivedPanel.hidden,false);assert.equal(fields.sentPanel.hidden,true);assert.equal(fields.readAll.hidden,false);
 });

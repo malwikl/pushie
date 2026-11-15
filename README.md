@@ -8,6 +8,8 @@ Self-hosted Web Push with passkeys, topics, a personal inbox, and a remote CLI.
 - Passkey login, invitation-based registration, and multiple devices per account.
 - Send to topics, users, selected devices, or all users.
 - Persistent inbox with read state, long messages, and live device sync.
+- Compact inbox list with topic filtering and expandable message details.
+- Choose which subscribed topics send push notifications to each device.
 - Delivery queue with retries, status tracking, and idempotent API requests.
 - REST API, standalone CLI, and Watchtower webhook.
 - Admin tools for users, topics, message logs, and database maintenance.

@@ -63,6 +63,7 @@
           <button id="sentTab" type="button" role="tab" aria-selected="false" aria-controls="sentPanel" tabindex="-1">Gesendet</button>
         </div>
         <div class="message-toolbar">
+          <label id="inboxTopicFilterControl" class="inbox-topic-filter" for="inboxTopicFilter">Nach Topic filtern <select id="inboxTopicFilter"><option value="">Alle Topics</option></select></label>
           <div class="toolbar-actions">
             <button id="refreshInbox" type="button" class="small quiet refresh-control" aria-label="Aktualisieren" title="Aktualisieren"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3A7 7 0 0 0 17.9 17"/></svg><span class="button-label">Aktualisieren</span></button>
             <button id="refreshSentMessages" type="button" class="small quiet refresh-control" aria-label="Aktualisieren" title="Aktualisieren" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3A7 7 0 0 0 17.9 17"/></svg><span class="button-label">Aktualisieren</span></button>
@@ -85,6 +86,7 @@
         <input id="deviceName" maxlength="80" placeholder="z. B. Mein iPhone" value="Mein Gerät">
         <button id="subscribe" class="primary">Push auf diesem Gerät aktivieren</button>
         <h3>Registrierte Geräte</h3>
+        <p class="hint">Wähle je Gerät, welche abonnierten Topics Push auslösen. Alle Topic-Nachrichten bleiben im Posteingang. Direktnachrichten sind davon unabhängig.</p>
         <div id="devices" class="list"></div>
       </section>
       <section class="panel">

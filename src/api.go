@@ -74,7 +74,7 @@ func (a *application) userRoutes(mux *http.ServeMux) {
 		devices := make([]map[string]any, 0)
 		for _, d := range snap.Devices {
 			if d.UserID == u.ID {
-				devices = append(devices, map[string]any{"id": d.ID, "name": d.Name, "createdAt": d.CreatedAt})
+				devices = append(devices, map[string]any{"id": d.ID, "name": d.Name, "createdAt": d.CreatedAt, "topics": d.Topics})
 			}
 		}
 		sort.Slice(devices, func(i, j int) bool { return devices[i]["name"].(string) < devices[j]["name"].(string) })
@@ -190,10 +190,20 @@ func (a *application) userRoutes(mux *http.ServeMux) {
 		reply(w, 200, map[string]bool{"ok": true})
 	}))
 	mux.HandleFunc("POST /api/me/messages/read-all", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
+		var req struct {
+			Topic *string `json:"topic"`
+		}
+		if r.ContentLength != 0 && !decode(w, r, &req) {
+			return
+		}
+		if req.Topic != nil && *req.Topic != "" && !topicRE.MatchString(*req.Topic) {
+			failure(w, 400, "Ungültiges Topic")
+			return
+		}
 		err := a.db.update(func(d *database) error {
 			now := time.Now().UTC()
 			for i := range d.Messages[u.ID] {
-				if d.Messages[u.ID][i].ReadAt == nil {
+				if d.Messages[u.ID][i].ReadAt == nil && (req.Topic == nil || d.Messages[u.ID][i].Topic == *req.Topic) {
 					d.Messages[u.ID][i].ReadAt = &now
 				}
 			}
@@ -299,6 +309,7 @@ func (a *application) userRoutes(mux *http.ServeMux) {
 		}
 		reply(w, 201, map[string]string{"id": id})
 	}))
+	mux.HandleFunc("PUT /api/me/devices/{id}/topics", a.requireUser(a.updateDeviceTopics))
 	mux.HandleFunc("DELETE /api/me/devices/{id}", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
 		if !a.rateLimit(w, r) {
 			return
@@ -319,6 +330,59 @@ func (a *application) userRoutes(mux *http.ServeMux) {
 		reply(w, 200, map[string]bool{"ok": true})
 	}))
 }
+
+func (a *application) updateDeviceTopics(w http.ResponseWriter, r *http.Request, u *user) {
+	if !a.rateLimit(w, r) {
+		return
+	}
+	var req struct {
+		Topics json.RawMessage `json:"topics"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	var topics []string
+	if len(req.Topics) == 0 || json.Unmarshal(req.Topics, &topics) != nil {
+		failure(w, 400, "Topic-Auswahl ungültig")
+		return
+	}
+	missing := errors.New("device missing")
+	invalid := errors.New("invalid topics")
+	err := a.db.update(func(db *database) error {
+		dev := db.Devices[r.PathValue("id")]
+		if dev == nil || dev.UserID != u.ID {
+			return missing
+		}
+		var selected []string
+		if topics != nil {
+			selected = make([]string, 0, len(topics))
+		}
+		for _, name := range topics {
+			if !topicRE.MatchString(name) || db.Topics[name] == nil {
+				return invalid
+			}
+			if !hasString(selected, name) {
+				selected = append(selected, name)
+			}
+		}
+		sort.Strings(selected)
+		dev.Topics = selected
+		return nil
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, missing):
+			failure(w, 404, "Gerät nicht gefunden")
+		case errors.Is(err, invalid):
+			failure(w, 400, "Topic-Auswahl ungültig")
+		default:
+			failure(w, 500, "Speichern fehlgeschlagen")
+		}
+		return
+	}
+	reply(w, 200, map[string]bool{"ok": true})
+}
+
 func (a *application) updateTopic(w http.ResponseWriter, r *http.Request, u *user, sub bool) {
 	if !a.rateLimit(w, r) {
 		return
@@ -449,6 +513,18 @@ func (a *application) adminRoutes(mux *http.ServeMux) {
 					}
 				}
 				account.Topics = next
+			}
+			for _, dev := range d.Devices {
+				if dev.Topics == nil {
+					continue
+				}
+				next := make([]string, 0, len(dev.Topics))
+				for _, selected := range dev.Topics {
+					if selected != name {
+						next = append(next, selected)
+					}
+				}
+				dev.Topics = next
 			}
 			return nil
 		})

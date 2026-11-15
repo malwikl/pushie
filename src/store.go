@@ -48,11 +48,18 @@ type inboxMessage struct {
 }
 
 type device struct {
+	// nil follows account subscriptions; an empty list disables topic pushes.
+	// Keep empty lists in JSON so this distinction survives storage and snapshots.
+	Topics       []string             `json:"topics"`
 	ID           string               `json:"id"`
 	UserID       string               `json:"userId"`
 	Name         string               `json:"name"`
 	Subscription webpush.Subscription `json:"subscription"`
 	CreatedAt    time.Time            `json:"createdAt"`
+}
+
+func (d *device) receivesTopic(name string) bool {
+	return name == "" || d.Topics == nil || hasString(d.Topics, name)
 }
 
 type topic struct {
@@ -187,7 +194,7 @@ func (s *store) devicesFor(topicName, userID, deviceID string) []device {
 		if userID != "" && dev.UserID != userID {
 			continue
 		}
-		if topicName != "" && !hasString(u.Topics, topicName) {
+		if topicName != "" && (!hasString(u.Topics, topicName) || !dev.receivesTopic(topicName)) {
 			continue
 		}
 		result = append(result, *dev)

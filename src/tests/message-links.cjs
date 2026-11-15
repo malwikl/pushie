@@ -58,7 +58,8 @@ test('foreground recovery ignores abandoned notification clicks',async()=>{
 
 function launchFixture(messages,hash=''){
  const calls=[],scrolled=[],tabs=[],url=new URL('https://push.example/'+hash);
- const context=vm.createContext({URL,URLSearchParams,Date,identityEpoch:0,$:()=>null,closeHeaderMenu(){},me:{id:'user'},reg:null,inboxMessages:[],
+ const filter={value:'topic:backup'};
+ const context=vm.createContext({URL,URLSearchParams,Date,identityEpoch:0,$:id=>id==='inboxTopicFilter'?filter:null,closeHeaderMenu(){},me:{id:'user'},reg:null,inboxMessages:[],openInboxMessages:new Set(),
   location:url,history:{replaceState(_,__,next){url.href=new URL(next,url).href}},
   api:async(path)=>{calls.push(path);return {messages}},refreshSentMessages:async()=>{},setMessageTab(tab){tabs.push(tab)},renderInbox(){},resetViews(){},
   document:{getElementById:id=>({querySelector:()=>null,scrollIntoView:()=>scrolled.push(id)})}});
@@ -73,6 +74,7 @@ test('opening without a notification URL leaves every message unread',async()=>{
 test('notification target wins over newer unread messages on opening',async()=>{
  const f=launchFixture([{id:'selected',createdAt:'2026-01-01'},{id:'newest',createdAt:'2026-02-01'}],'#message-selected');
  await f.refresh({openUnread:true});assert.deepEqual(f.scrolled,['message-selected']);
+ assert.equal(f.context.$('inboxTopicFilter').value,'');assert.equal(f.context.openInboxMessages.has('selected'),true);
 });
 test('ordinary polling and opening with no unread messages do not navigate',async()=>{
  const f=launchFixture([{id:'unread'}]);await f.refresh();assert.deepEqual(f.scrolled,[]);

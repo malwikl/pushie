@@ -99,12 +99,19 @@ function render() {
       catch(e){check.checked=!check.checked;status(e.message,true)}finally{check.disabled=false}
     });
   }
-  const devices=$('devices');devices.replaceChildren();
+  const devices=$('devices');
+  const deviceSettings=new Map([...devices.querySelectorAll('.device-topic-settings')].map(settings=>[settings.dataset.deviceId,{
+    open:settings.open,savedTopics:settings.dataset.savedTopics,mode:settings.querySelector('select').value,
+    topics:[...settings.querySelectorAll('input:checked')].map(input=>input.value)
+  }]));
+  devices.replaceChildren();
   if (!me.devices.length){const e=document.createElement('p');e.className='empty';e.textContent=t('Noch keine Geräte registriert.');devices.appendChild(e)}
   for(const dev of me.devices){
     const item=row(),text=document.createElement('div'),name=document.createElement('b'),note=document.createElement('span'),button=document.createElement('button');
+    item.classList.add('device-card');
+    const heading=document.createElement('div');heading.className='device-heading';
     name.textContent=dev.name;note.textContent=new Date(dev.createdAt).toLocaleDateString(locale());button.textContent=t('Entfernen');button.className='small';
-    text.append(name,note);item.append(text,button);devices.append(item);
+    text.append(name,note);heading.append(text,button);item.append(heading);renderDeviceTopicSettings(dev,item,deviceSettings.get(dev.id));devices.append(item);
     button.addEventListener('click',async()=>{
       button.disabled=true;
       try{await api(`/api/me/devices/${encodeURIComponent(dev.id)}`,'DELETE',{});
@@ -113,6 +120,38 @@ function render() {
       catch(e){status(e.message,true)}finally{button.disabled=false}
     });
   }
+}
+function renderDeviceTopicSettings(dev,item,draft){
+  const settings=document.createElement('details'),summary=document.createElement('summary'),form=document.createElement('form');
+  settings.className='device-topic-settings';
+  settings.dataset.deviceId=dev.id;settings.dataset.savedTopics=JSON.stringify(dev.topics ?? null);settings.open=!!draft?.open;
+  if(draft?.savedTopics!==settings.dataset.savedTopics)draft=null;
+  const current=dev.topics==null?t('Alle abonnierten Topics'):dev.topics.length?dev.topics.join(', '):t('Keine Topic-Pushs');
+  summary.textContent=`${t('Topic-Zustellung')}: ${current}`;
+  const modeLabel=document.createElement('label'),mode=document.createElement('select');
+  modeLabel.textContent=t('Push-Topics für dieses Gerät');modeLabel.append(mode);
+  for(const [value,label] of [['all','Alle abonnierten Topics'],['selected','Ausgewählte Topics'],['none','Keine Topic-Pushs']]){
+    const option=document.createElement('option');option.value=value;option.textContent=t(label);mode.append(option);
+  }
+  mode.value=draft?draft.mode:dev.topics==null?'all':dev.topics.length?'selected':'none';
+  const choices=document.createElement('fieldset'),legend=document.createElement('legend');
+  choices.className='device-topic-choices';legend.textContent=t('Ausgewählte Topics');choices.append(legend);
+  for(const topic of me.topics){
+    const label=document.createElement('label'),check=document.createElement('input'),text=document.createElement('span');
+    label.className='check-row';check.type='checkbox';check.value=topic.name;
+    check.checked=draft?draft.topics.includes(topic.name):dev.topics==null?me.subscriptions.includes(topic.name):dev.topics.includes(topic.name);
+    check.disabled=!me.subscriptions.includes(topic.name);
+    text.textContent=topic.name+(check.disabled?` (${t('nicht abonniert')})`:'');label.append(check,text);choices.append(label);
+  }
+  const hint=document.createElement('p');hint.className='hint';hint.textContent=t('Abonniere Topics unter Topics. Die Geräteauswahl gilt für neue Nachrichten; der Posteingang bleibt vollständig.');
+  const save=document.createElement('button');save.type='submit';save.className='small';save.textContent=t('Speichern');
+  const update=()=>{choices.hidden=mode.value!=='selected'};mode.onchange=update;update();
+  form.append(modeLabel,choices,hint,save);settings.append(summary,form);item.append(settings);
+  form.onsubmit=event=>{
+    event.preventDefault();
+    const topics=mode.value==='all'?null:mode.value==='none'?[]:[...choices.querySelectorAll('input:checked')].map(input=>input.value);
+    run(save,async()=>{await api(`/api/me/devices/${encodeURIComponent(dev.id)}/topics`,'PUT',{topics});await refresh();status(t('Topic-Zustellung gespeichert.'))});
+  };
 }
 async function refresh(openUnread=false,liveOnly=false){
   if(window.authRefreshStopped)return;
@@ -207,6 +246,7 @@ function setMessageTab(tab,{focus=false}={}){
   $('refreshInbox').hidden=activeMessageTab!=='received';
   $('refreshSentMessages').hidden=activeMessageTab!=='sent';
   $('readAll').hidden=activeMessageTab!=='received';
+  $('inboxTopicFilterControl').hidden=activeMessageTab!=='received';
 }
 for(const name of ['received','sent'])$(name+'Tab').addEventListener('click',()=>setMessageTab(name));
 $('messageTabs').addEventListener('keydown',event=>{
@@ -216,6 +256,7 @@ $('messageTabs').addEventListener('keydown',event=>{
 });
 $('cancelSend').addEventListener('click',()=>$('sendDialog').close());
 let inboxMessages=[];
+let openInboxMessages=new Set();
 let sentMessages=[];
 async function refreshSentMessages(){
   if(!me)return;
@@ -287,20 +328,43 @@ async function retryPushReceipts(){
     registration.active.postMessage({type:'retry-push-receipts'},[channel.port2]);
   });
 }
+function inboxMessagesForTopic(messages,filter){
+  return messages.filter(message=>!filter || (filter==='direct'?!message.topic:message.topic===filter.slice(6)));
+}
 function renderInbox(){
   const list=$('inbox');list.replaceChildren();
+  const filter=$('inboxTopicFilter'),selected=filter.value;
+  const topicNames=new Set([...(me?.topics || []).map(topic=>topic.name),...inboxMessages.map(message=>message.topic).filter(Boolean)]);
+  if(selected.startsWith('topic:'))topicNames.add(selected.slice(6));
+  filter.replaceChildren();
+  for(const [value,label] of [['',t('Alle Topics')],['direct',t('Direktnachricht')],...[...topicNames].sort().map(name=>['topic:'+name,name])]){
+    const option=document.createElement('option');option.value=value;option.textContent=label;filter.append(option);
+  }
+  filter.value=selected;
+  const visible=inboxMessagesForTopic(inboxMessages,selected);
+  openInboxMessages=new Set([...openInboxMessages].filter(id=>inboxMessages.some(message=>message.id===id)));
   const unread=inboxMessages.filter(m=>!m.readAt).length;
   $('unreadBadge').textContent=unread?String(unread):'';
   $('unreadBadge').hidden=!unread;
-  $('readAll').disabled=!unread;
-  if(!inboxMessages.length){const p=document.createElement('p');p.className='empty';p.textContent=t('Noch keine Nachrichten vorhanden.');list.append(p);return}
-  for(const m of inboxMessages){
-    const item=row();item.id='message-'+m.id;item.classList.add('message');if(!m.readAt)item.classList.add('unread');
-    const content=messageContent(m);
+  $('readAll').disabled=!visible.some(message=>!message.readAt);
+  $('readAll').textContent=t(selected?'Angezeigte gelesen':'Alle gelesen');
+  if(!visible.length){const p=document.createElement('p');p.className='empty';p.textContent=t(selected?'Keine Nachrichten für dieses Topic.':'Noch keine Nachrichten vorhanden.');list.append(p);return}
+  const headings=document.createElement('div');headings.className='inbox-list-heading';headings.setAttribute('aria-hidden','true');
+  for(const label of ['Datum','Topic','Titel','Aktionen']){const column=document.createElement('span');column.textContent=t(label);headings.append(column)}list.append(headings);
+  for(const m of visible){
+    const item=row();item.id='message-'+m.id;item.classList.add('message','inbox-entry');if(!m.readAt)item.classList.add('unread');
+    const details=document.createElement('details'),summary=document.createElement('summary'),time=document.createElement('time'),topic=document.createElement('span'),title=document.createElement('div'),name=document.createElement('b');
+    details.className='inbox-details';summary.className='inbox-summary';time.dateTime=m.createdAt;time.textContent=formatDate(m.createdAt);
+    topic.className='inbox-topic';topic.textContent=m.topic || t('Direktnachricht');
+    title.className='inbox-title';name.className='message-title';name.textContent=m.title;
     const controls=document.createElement('div');controls.className='message-controls';
     const readState=document.createElement('span');readState.className='message-read-state';
     readState.textContent=m.readAt?(language==='en'?'Read':'Gelesen'):t('Ungelesen');
-    content.querySelector('.message-heading').prepend(readState);
+    title.append(name,readState);summary.append(time,topic,title);details.append(summary,messageContent(m));
+    details.open=openInboxMessages.has(m.id);
+    details.addEventListener('toggle',()=>{
+      if(details.open)openInboxMessages.add(m.id);else openInboxMessages.delete(m.id);
+    });
     if(!m.readAt){
       const read=document.createElement('button');read.type='button';read.className='small quiet';read.textContent=t('Als gelesen markieren');controls.append(read);
       let marking=false;
@@ -317,15 +381,11 @@ function renderInbox(){
         });
       };
       read.addEventListener('click',markRead);
-      content.addEventListener('click',event=>{
-        // Expanding the message counts as reading; log and utility controls do not.
-        if(event.target.closest('button, a, input, details:not(.message-fulltext)'))return;
-        markRead();
-      });
+      details.addEventListener('toggle',()=>{if(details.open)markRead()});
     }
     const del=document.createElement('button');del.className='small quiet danger';del.textContent=t('Löschen');controls.append(del);
     del.addEventListener('click',()=>run(del,async()=>{await api(`/api/me/messages/${encodeURIComponent(m.id)}`,'DELETE',{});await refreshInbox()}));
-    item.append(content,controls);list.append(item);
+    item.append(details,controls);list.append(item);
   }
 }
 function linkedMessageId(){
@@ -363,14 +423,18 @@ async function loadInbox(){
   const linkedId=await readLinkedMessage();
   // A newer tap may have arrived while the read request was in flight.
   if(linkedId && linkedMessageId()!==linkedId)return;
-  if(linkedId){setMessageTab('received');if(resetViews)resetViews(true);}
+  if(linkedId){
+    setMessageTab('received');if(resetViews)resetViews(true);
+    if($('inboxTopicFilter'))$('inboxTopicFilter').value='';
+    openInboxMessages.add(linkedId);
+  }
   renderInbox();
   if(linkedId){
     const item=document.getElementById('message-'+linkedId);
     if(item){
       const dialog=$('sendDialog');if(dialog?.open)dialog.close();
       closeHeaderMenu();
-      const details=item.querySelector('.message-fulltext');if(details)details.open=true;
+      for(const selector of ['.inbox-details','.message-fulltext']){const details=item.querySelector(selector);if(details)details.open=true;}
       item.scrollIntoView({block:'start'});
       lastOpenedMessage=linkedId;lastOpenedMessageAt=Date.now();
     }
@@ -410,7 +474,12 @@ function renderSendTargets(){
 }
 $('targetType').addEventListener('change',renderSendTargets);
 $('refreshInbox').addEventListener('click',()=>run($('refreshInbox'),async()=>{window.retryLiveSync?.();await refreshInbox();status(t('Posteingang aktualisiert.'))}));
-$('readAll').addEventListener('click',()=>run($('readAll'),async()=>{await api('/api/me/messages/read-all','POST',{});await refreshInbox();status(t('Alle Nachrichten als gelesen markiert.'))}));
+$('inboxTopicFilter').addEventListener('change',renderInbox);
+$('readAll').addEventListener('click',()=>run($('readAll'),async()=>{
+  const filter=$('inboxTopicFilter').value;
+  await api('/api/me/messages/read-all','POST',filter?{topic:filter==='direct'?'':filter.slice(6)}:{});
+  await refreshInbox();status(t(filter?'Angezeigte Nachrichten als gelesen markiert.':'Alle Nachrichten als gelesen markiert.'));
+}));
 $('bootstrapRegister').addEventListener('click',()=>run($('bootstrapRegister'),async()=>{
   const name=$('bootstrapName').value.trim(),code=$('bootstrapCode').value;
   if(!name||!code)throw new Error(t('Name und einmaligen Einrichtungscode eingeben'));
@@ -743,7 +812,7 @@ function clearAccountState(){
  $('centralLogList')?.replaceChildren();
  $('centralLogFilters')?.reset();centralLogOffset=0;centralLogRequest++;
  if($('centralLogCount'))$('centralLogCount').textContent='';
- inboxMessages=[];sentMessages=[];$('sentMessages').replaceChildren();adminTargets=null;lastSentMessageId=null;storageCleanupPreview=null;
+ inboxMessages=[];openInboxMessages.clear();$('inboxTopicFilter').value='';sentMessages=[];$('sentMessages').replaceChildren();adminTargets=null;lastSentMessageId=null;storageCleanupPreview=null;
  for(const id of ['inbox','topics','devices','adminUsers','integrationKeys','storageStats','sendResult','sendDialogStatus','recipientSummary','inviteResult','cleanupPreview','storageResult','passkeyCount','welcome','unreadBadge','sendTarget','targetDevices','apiKeys'])$(id)?.replaceChildren();
  $('newApiKey').hidden=true;$('newIntegrationKey').hidden=true;
  for(const input of $('account').querySelectorAll('input[type="text"],input:not([type]),input[type="password"],textarea'))input.value='';
@@ -826,7 +895,7 @@ async function refreshCentralLog(){
     content.replaceChildren();const message=current.notification;
     const metadata=document.createElement('pre');metadata.className='message-longtext';
     const target=current.target;
-    metadata.textContent=[`ID: ${message.id}`,`${logLabel('From','Von')}: ${current.sender.name} (${current.sender.id||current.source})`,`${logLabel('Source','Quelle')}: ${current.source}`,`${logLabel('To','An')}: ${current.recipients.map(p=>`${p.name} (${p.id})`).join(', ')||'—'}`,`Topic: ${target.topic||'—'}`,`${logLabel('Target','Ziel')}: ${target.broadcast?'Broadcast':target.deviceId||target.userId||target.topic||logLabel('Historical / unknown','Historisch / unbekannt')}`,`${logLabel('Selected devices','Ausgewählte Geräte')}: ${target.deviceIds?.join(', ')||'—'}`,`${logLabel('Device selection','Geräteermittlung')}: ${current.recovered?logLabel('Original selection unknown (historical entry).','Ursprüngliche Auswahl unbekannt (historischer Eintrag).'):target.broadcast?logLabel('All registered devices of all accounts.','Alle registrierten Geräte aller Konten.'):target.topic?logLabel('All registered devices of accounts subscribed to this topic.','Alle registrierten Geräte der Konten, die dieses Topic abonniert hatten.'):target.deviceId?logLabel('The explicitly targeted device.','Das explizit adressierte Gerät.'):target.deviceIds?.length?logLabel('Only the selected devices of the targeted account.','Nur die ausgewählten Geräte des adressierten Kontos.'):logLabel('All registered devices of the targeted account.','Alle registrierten Geräte des adressierten Kontos.')}`,current.recovered?'':logLabel('Recipients and devices were resolved when the message was accepted; retries use that same device set. Accounts without devices receive only an inbox message.','Empfänger und Geräte wurden bei Annahme der Nachricht ermittelt; Wiederholungen verwenden dieselben Geräte. Konten ohne Geräte erhalten nur eine Posteingangsnachricht.'),`Tag: ${message.tag||'—'}`].join('\n');
+    metadata.textContent=[`ID: ${message.id}`,`${logLabel('From','Von')}: ${current.sender.name} (${current.sender.id||current.source})`,`${logLabel('Source','Quelle')}: ${current.source}`,`${logLabel('To','An')}: ${current.recipients.map(p=>`${p.name} (${p.id})`).join(', ')||'—'}`,`Topic: ${target.topic||'—'}`,`${logLabel('Target','Ziel')}: ${target.broadcast?'Broadcast':target.deviceId||target.userId||target.topic||logLabel('Historical / unknown','Historisch / unbekannt')}`,`${logLabel('Selected devices','Ausgewählte Geräte')}: ${target.deviceIds?.join(', ')||'—'}`,`${logLabel('Device selection','Geräteermittlung')}: ${current.recovered?logLabel('Original selection unknown (historical entry).','Ursprüngliche Auswahl unbekannt (historischer Eintrag).'):target.broadcast?logLabel('All registered devices of all accounts.','Alle registrierten Geräte aller Konten.'):target.topic?logLabel('Devices enabled for this topic in subscribed accounts at send time.','Für dieses Topic aktivierte Geräte der abonnierten Konten zum Versandzeitpunkt.'):target.deviceId?logLabel('The explicitly targeted device.','Das explizit adressierte Gerät.'):target.deviceIds?.length?logLabel('Only the selected devices of the targeted account.','Nur die ausgewählten Geräte des adressierten Kontos.'):logLabel('All registered devices of the targeted account.','Alle registrierten Geräte des adressierten Kontos.')}`,current.recovered?'':logLabel('Recipients and devices were resolved when the message was accepted; retries use that same device set. Accounts without devices receive only an inbox message.','Empfänger und Geräte wurden bei Annahme der Nachricht ermittelt; Wiederholungen verwenden dieselben Geräte. Konten ohne Geräte erhalten nur eine Posteingangsnachricht.'),`Tag: ${message.tag||'—'}`].join('\n');
     const body=document.createElement('pre');body.className='message-longtext';body.textContent=message.body;
     content.append(metadata,body);
     if(message.longText){const title=document.createElement('h3'),full=document.createElement('pre');title.textContent=logLabel('Full text','Langtext');full.className='message-longtext';full.textContent=message.longText;content.append(title,full)}

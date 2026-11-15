@@ -80,6 +80,33 @@ the proxy must overwrite or append `X-Forwarded-For`.
 - Use Account to manage passkeys, personal API keys, language, and theme.
 - Use Administration to manage users, topics, integration keys, and storage.
 
+### Inbox and device topic delivery
+
+The inbox is a compact list showing date, topic, title, read state, and actions.
+Open a row to read its body and optional full text. Opening a message marks it
+read; browsing the list or changing the filter does not. Use **Filter by topic**
+to show one topic or direct messages, including messages from deleted topics.
+With a filter active, **Mark shown as read** applies only to that topic or direct
+messages. The unread badge continues to count the whole inbox.
+
+Under **Devices → Topic delivery**, choose separately for each device:
+
+- **All subscribed topics** (default, including existing devices).
+- **Selected topics**, chosen from your account's topic subscriptions.
+- **No topic pushes**, for an inbox-only device.
+
+Account subscriptions still determine which topic messages enter your inbox.
+Device settings only filter topic push delivery; direct messages and broadcasts
+remain independent. Settings apply to newly accepted messages. Already queued
+deliveries keep their original recipients. Re-registering the same push
+subscription preserves its device settings.
+
+The authenticated browser API `PUT /api/me/devices/{id}/topics` accepts
+`{"topics":null}` for all subscribed topics, `{"topics":["backup"]}` for selected
+topics, or `{"topics":[]}` for none. A user can update only their own devices.
+`POST /api/me/messages/read-all` accepts an optional `{"topic":"backup"}` filter;
+an empty topic selects direct messages and omitting the field selects all messages.
+
 Keep the public hostname stable: passkeys are tied to it.
 
 ## API

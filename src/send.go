@@ -219,7 +219,7 @@ func (a *application) dispatchNotification(w http.ResponseWriter, r *http.Reques
 			}
 		}
 		for _, dev := range db.Devices {
-			if (req.DeviceIDs != nil && !selected[dev.ID]) || !targets[dev.UserID] || (req.DeviceID != "" && req.DeviceID != dev.ID) {
+			if (req.DeviceIDs != nil && !selected[dev.ID]) || !targets[dev.UserID] || (req.DeviceID != "" && req.DeviceID != dev.ID) || !dev.receivesTopic(req.Topic) {
 				continue
 			}
 			pending++
@@ -239,7 +239,7 @@ func (a *application) dispatchNotification(w http.ResponseWriter, r *http.Reques
 			result.InboxUsers++
 		}
 		for _, dev := range db.Devices {
-			if (req.DeviceIDs != nil && !selected[dev.ID]) || !targets[dev.UserID] || (req.DeviceID != "" && req.DeviceID != dev.ID) {
+			if (req.DeviceIDs != nil && !selected[dev.ID]) || !targets[dev.UserID] || (req.DeviceID != "" && req.DeviceID != dev.ID) || !dev.receivesTopic(req.Topic) {
 				continue
 			}
 			jobID, e1 := secret()
