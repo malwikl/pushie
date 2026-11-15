@@ -16,7 +16,7 @@
 <body>
   <div id="pullRefresh" class="pull-refresh" role="status" aria-live="polite" hidden><span class="pull-refresh-spinner" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span id="pullRefreshLabel" class="pull-refresh-label"></span></div>
   <main class="container">
-    <header><img class="mark" src="/icon.svg" alt="" width="36" height="36"><div><h1>pushie <span id="syncIndicator" class="sync-indicator" role="status" hidden></span></h1></div><div class="header-menu">
+    <header id="appHeader"><a id="inboxHome" class="brand-home" href="#inboxPanel" aria-label="Zum Posteingang"><img class="mark" src="/icon.svg" alt="" width="36" height="36"><h1>pushie <span id="syncIndicator" class="sync-indicator" role="status" hidden></span></h1></a><div class="header-menu">
       <button id="themeToggle" class="icon-button theme-toggle" type="button" aria-label="Dunkelmodus" title="Dunkelmodus" aria-pressed="false"><svg class="theme-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14A8.5 8.5 0 0 1 10 3.5 8.5 8.5 0 1 0 20.5 14Z"/></svg><svg class="theme-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/></svg></button>
       <button id="menuToggle" class="icon-button" type="button" aria-label="Menü" title="Menü" aria-expanded="false" aria-controls="headerMenu"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
       <nav id="headerMenu" class="menu-popover" aria-label="Menü" hidden>
@@ -227,7 +227,7 @@
       </div>
     </dialog>
     <p role="status" aria-live="polite" id="status"></p>
-    <footer>pushie · v<span id="appVersion">__PUSHIE_VERSION__</span></footer>
+    <footer>pushie · v<span id="appVersion">__PUSHIE_VERSION__</span> · <span id="serverHostname"></span></footer>
   </main>
   <script src="/i18n.js?v=__PUSHIE_VERSION__"></script>
   <script src="/version.js?v=__PUSHIE_VERSION__" defer></script>

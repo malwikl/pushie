@@ -26,6 +26,8 @@ html[data-theme="dark"] {
 body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
 .container { max-width: 1000px; margin: 0 auto; padding: 20px 24px 32px; }
 header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.brand-home { display: flex; align-items: center; gap: 10px; min-width: 0; color: inherit; text-decoration: none; }
+.brand-home:focus-visible { outline: 2px solid var(--blue); outline-offset: 4px; border-radius: 4px; }
 .mark { display: grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: 10px; background: #132c51; color: #fff; font-size: 22px; }
 h1 { margin: 0; font-size: 23px; letter-spacing: -.6px; }
 h2 { margin: 0; font-size: 19px; line-height: 1.4; letter-spacing: -.3px; }
@@ -176,7 +178,7 @@ html[data-theme="dark"] .theme-toggle .theme-moon { display: none; }
 #status { min-height: 20px; margin: 8px 0; color: #0f5132; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 #status.error { color: var(--danger); }
 html[data-theme="dark"] #status:not(.error) { color: #86efac; }
-footer { padding-top: 4px; text-align: center; font-size: 11px; color: var(--muted); }
+footer { padding-top: 4px; text-align: center; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
 
 @media (max-width: 600px) {
   .container { padding: 12px 12px 24px; }

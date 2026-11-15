@@ -4,6 +4,26 @@ const assert=require('node:assert/strict');
 const vm=require('node:vm');
 const fs=require('node:fs');
 const source=fs.readFileSync(require('node:path').join(__dirname,'../static/app.js'),'utf8');
+function inboxNavigationFixture(){
+ const fields={inboxHome:{},appHeader:{addEventListener(type,fn){this[type]=fn}},serverHostname:{}};
+ const url=new URL('https://pushie.example.test:8443/?lang=de&message=old#devicesView');let active='sent',views=0,refreshes=0;
+ const context=vm.createContext({$:id=>fields[id],URL,location:url,history:{replaceState(_,__,value){url.href=value}},window:{scrollTo(){}},me:{id:'user'},receivedMessageList:{filter:'topic:backup'},
+  resetViews:()=>{views++},closeHeaderMenu(){},setMessageTab:tab=>{active=tab},renderInbox(){},refreshInbox:async()=>{refreshes++},status(){}});
+ vm.runInContext(source.slice(source.indexOf('function setupInboxNavigation()')),context);context.setupInboxNavigation();
+ return {fields,context,url,active:()=>active,views:()=>views,refreshes:()=>refreshes};
+}
+test('brand links to the received inbox, resets the filter and preserves language while showing hostname without port',()=>{
+ const f=inboxNavigationFixture();let prevented=false;
+ assert.equal(f.fields.serverHostname.textContent,'pushie.example.test');
+ f.fields.inboxHome.onclick({preventDefault(){prevented=true}});
+ assert.equal(prevented,true);assert.equal(f.active(),'received');assert.equal(f.context.receivedMessageList.filter,'');assert.equal(f.url.hash,'#inboxPanel');assert.equal(f.url.searchParams.get('lang'),'de');assert.equal(f.url.searchParams.has('message'),false);assert.equal(f.refreshes(),1);
+});
+test('empty header area opens inbox; theme/menu controls and signed-out clicks do not navigate',()=>{
+ const f=inboxNavigationFixture();
+ f.fields.appHeader.click({target:{closest:()=>({})}});assert.equal(f.active(),'sent');assert.equal(f.views(),0);
+ f.fields.appHeader.click({target:{closest:()=>null}});assert.equal(f.active(),'received');assert.equal(f.views(),1);
+ f.context.me=null;f.fields.inboxHome.onclick({preventDefault(){}});assert.equal(f.views(),1);
+});
 function fixture(role){
  const elements=new Map();
  function node(id=''){

@@ -66,7 +66,7 @@
       const full=document.createElement('div'),body=document.createElement('p'),less=document.createElement('button');
       full.className='notification-full';full.id=fullID;full.hidden=!expanded;body.textContent=message.body;full.append(body);
       if(message.longText){const long=document.createElement('pre');long.className='message-longtext';long.textContent=message.longText;full.append(long)}
-      less.type='button';less.className='message-more';less.textContent=t('weniger');less.setAttribute('aria-expanded','true');less.setAttribute('aria-controls',fullID);full.append(less);
+      less.type='button';less.className='message-more';less.textContent=t('weniger');less.hidden=true;less.setAttribute('aria-expanded','true');less.setAttribute('aria-controls',fullID);full.append(less);
       const toggle=()=>{
         const opening=!this.expanded.has(message.id);
         if(opening)this.expanded.add(message.id);else this.expanded.delete(message.id);
@@ -83,7 +83,7 @@
       }
       const remove=document.createElement('button');remove.type='button';remove.className='small quiet danger';remove.textContent=t('Löschen');
       remove.onclick=()=>this.onDelete(message,remove);buttons.append(remove);actions.append(time,buttons);
-      item.append(dot,content,actions);this.list.append(item);this.rows.push({message,preview,text,more});
+      item.append(dot,content,actions);this.list.append(item);this.rows.push({message,preview,text,more,full,less});
     }
     async requestRead(message,button){
       if(this.reading.has(message.id)||message.readAt)return;
@@ -94,12 +94,22 @@
       if(this.frame)cancelAnimationFrame(this.frame);
       this.frame=requestAnimationFrame(()=>{this.frame=null;for(const entry of this.rows)this.layoutPreview(entry)});
     }
-    layoutPreview({message,preview,text,more}){
-      if(preview.hidden||!preview.isConnected||preview.clientWidth<1)return;
+    layoutPreview({message,preview,text,more,full,less}){
+      if(!preview.isConnected)return;
+      const wasHidden=preview.hidden;
+      preview.hidden=false;
+      if(preview.clientWidth<1){preview.hidden=wasHidden;return}
       const style=getComputedStyle(preview),limit=2*(parseFloat(style.lineHeight)||parseFloat(style.fontSize)*1.5)+1;
       const body=message.body||'';
       text.nodeValue=body;more.hidden=true;
-      if(!message.longText&&preview.scrollHeight<=limit)return;
+      const expandable=!!message.longText?.trim()||preview.scrollHeight>limit;
+      less.hidden=!expandable;
+      if(!expandable){
+        this.expanded.delete(message.id);full.hidden=true;
+        return;
+      }
+      if(this.expanded.has(message.id)){preview.hidden=true;full.hidden=false;return}
+      full.hidden=true;
       more.hidden=false;
       const chars=typeof Intl.Segmenter==='function'?[...new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(body)].map(part=>part.segment):Array.from(body);
       let low=0,high=chars.length;

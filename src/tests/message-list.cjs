@@ -62,3 +62,14 @@ test('read filters map topic, direct and broadcast to separate API scopes',()=>{
  const {context}=fixture(),filter=context.window.PushieMessages.readFilter;
  for(const [key,expected] of [['',{}],['topic:backup',{topic:'backup'}],['direct',{deliveryReason:'direct'}],['broadcast',{deliveryReason:'broadcast'}]])assert.deepEqual(JSON.parse(JSON.stringify(filter(key))),expected);
 });
+test('short notification links do not expose less; long text remains expandable',()=>{
+ const f=fixture({messages:[{id:'short',body:'Short',title:'Title'}]});
+ f.renderer.expanded.add('short');f.renderer.render();
+ const entry=f.renderer.rows[0];entry.preview.isConnected=true;entry.preview.clientWidth=300;entry.preview.scrollHeight=21;
+ f.context.getComputedStyle=()=>({lineHeight:'21px',fontSize:'14px'});
+ f.renderer.layoutPreview(entry);
+ assert.equal(entry.preview.hidden,false);assert.equal(entry.full.hidden,true);assert.equal(entry.more.hidden,true);assert.equal(entry.less.hidden,true);assert.equal(f.renderer.expanded.has('short'),false);
+ const long=fixture();long.renderer.expanded.add('one');long.renderer.render();
+ const expanded=long.renderer.rows[0];expanded.preview.isConnected=true;expanded.preview.clientWidth=300;expanded.preview.scrollHeight=21;long.context.getComputedStyle=f.context.getComputedStyle;
+ long.renderer.layoutPreview(expanded);assert.equal(expanded.full.hidden,false);assert.equal(expanded.less.hidden,false);
+});

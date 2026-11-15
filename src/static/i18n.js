@@ -1,5 +1,6 @@
 'use strict';
 const translations = {
+ "Zum Posteingang": "Go to inbox",
  "Weitere Aktionen": "More actions",
  "Alle löschen …": "Delete all …",
  "Angezeigte löschen …": "Delete shown …",

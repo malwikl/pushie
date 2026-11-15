@@ -106,6 +106,11 @@ manually** to keep messages unread when expanding them or tapping a push
 notification. Use **Read** or **Mark all as read** explicitly. This account
 preference syncs across devices. By default, opening a received message marks it
 read automatically; browsing previews or filtering never marks messages read.
+Short messages that already fit the preview have no **more/less** controls,
+including when opened from a push notification. Clicking the logo, app name,
+or an empty area of the header returns to Received with all messages visible;
+the theme and navigation controls retain their own actions. The footer shows
+the current browser hostname alongside the app version.
 
 Under **Devices → Topic delivery**, choose separately for each device:
 

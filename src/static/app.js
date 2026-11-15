@@ -569,6 +569,7 @@ if('serviceWorker' in navigator)navigator.serviceWorker.addEventListener('messag
 });
 (async()=>{
   try{
+    setupInboxNavigation();
     window.pushieOnboarding=window.createPushieOnboarding({getProfile:()=>me,getRegistration:()=>reg,register:registerCurrentDevice,api,translate:t});
     if (!('PublicKeyCredential' in window))throw new Error(t('Passkeys sind hier nicht verfügbar. HTTPS oder localhost verwenden.'));
     const config=await api('/api/config');vapidPublicKey=config.vapidPublicKey;bootstrapAvailable=!!config.bootstrapAvailable;
@@ -891,4 +892,21 @@ async function refreshCentralLog(){
    }).catch(error=>{content.replaceChildren();const retry=document.createElement('button');retry.type='button';retry.textContent=error.message+' · '+logLabel('Retry','Erneut versuchen');retry.onclick=()=>{content.replaceChildren();details.open=false;details.open=true};content.append(retry)});
   });
  }
+}
+
+function setupInboxNavigation(){
+  $('serverHostname').textContent=location.hostname;
+  const showInbox=()=>{
+    if(!me)return;
+    closeHeaderMenu();if(resetViews)resetViews(true);
+    setMessageTab('received');
+    if(receivedMessageList){receivedMessageList.filter='';renderInbox()}
+    const url=new URL(location.href);url.searchParams.delete('message');url.hash='inboxPanel';
+    history.replaceState(null,'',url.href);window.scrollTo({top:0,behavior:'auto'});
+    refreshInbox().catch(error=>status(error.message,true));
+  };
+  $('inboxHome').onclick=event=>{event.preventDefault();showInbox()};
+  $('appHeader').addEventListener('click',event=>{
+    if(!event.target.closest('a, button, select, input, label, .header-menu'))showInbox();
+  });
 }
