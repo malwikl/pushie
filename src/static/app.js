@@ -75,9 +75,11 @@ function render() {
   $('adminShortcut').hidden=me?.role!=='admin';$('openSend').hidden=me?.role!=='admin';
   const dialog=$('sendDialog');if(me?.role!=='admin' && dialog?.open)dialog.close();
   if (me) setupViews();
-  if (!me) return;
+  if (!me){window.pushieOnboarding?.update(null);return;}
   $('accountLanguage').value=me.language || language;
   $('accountTheme').value=me.theme || 'auto';
+  $('manualRead').checked=!!me.manualRead;
+  window.pushieOnboarding?.update(me);
   $('topicCreate').hidden=me.role!=='admin';
   $('welcome').textContent=(language === 'en' ? `Hello, ${me.name}` : `Hallo, ${me.name}`);
   $('passkeyCount').textContent=(language === 'en' ? `${me.passkeyCount} passkey(s) registered. Add a second passkey as a backup if possible.` : `${me.passkeyCount} Passkey(s) hinterlegt. Registriere nach Möglichkeit einen zweiten Passkey als Reserve.`);
@@ -246,7 +248,7 @@ function setMessageTab(tab,{focus=false}={}){
   $('refreshInbox').hidden=activeMessageTab!=='received';
   $('refreshSentMessages').hidden=activeMessageTab!=='sent';
   $('readAll').hidden=activeMessageTab!=='received';
-  $('inboxTopicFilterControl').hidden=activeMessageTab!=='received';
+  (activeMessageTab==='sent'?sentMessageList:receivedMessageList)?.scheduleLayout();
 }
 for(const name of ['received','sent'])$(name+'Tab').addEventListener('click',()=>setMessageTab(name));
 $('messageTabs').addEventListener('keydown',event=>{
@@ -258,34 +260,36 @@ $('cancelSend').addEventListener('click',()=>$('sendDialog').close());
 let inboxMessages=[];
 let openInboxMessages=new Set();
 let sentMessages=[];
+let openSentMessages=new Set(),receivedMessageList=null,sentMessageList=null;
 async function refreshSentMessages(){
   if(!me)return;
   const response=await api('/api/me/sent-messages');sentMessages=response.messages||[];
   renderSentMessages();
 }
-function messageContent(message){
-  const content=document.createElement('div'),heading=document.createElement('div'),title=document.createElement('b'),time=document.createElement('time'),body=document.createElement('p'),meta=document.createElement('div');
-  content.className='message-content';heading.className='message-heading';title.className='message-title';title.textContent=message.title;
-  time.dateTime=message.createdAt;time.textContent=formatDate(message.createdAt);
-  body.textContent=message.body;meta.className='meta';
-  meta.textContent=message.topic?`Topic: ${message.topic}`:t('Direktnachricht');
-  heading.append(time);content.append(heading,title,body,meta);
-  if(message.longText){
-    const details=document.createElement('details'),summary=document.createElement('summary'),full=document.createElement('pre');
-    details.className='message-fulltext';summary.textContent=t('Vollständige Nachricht anzeigen');full.className='message-longtext';full.textContent=message.longText;
-    details.append(summary,full);content.append(details);
-  }
-  return content;
+function getMessageList(sent=false){
+  const existing=sent?sentMessageList:receivedMessageList;if(existing)return existing;
+  const list=new window.PushieMessages.MessageList({
+    list:$(sent?'sentMessages':'inbox'),filters:$(sent?'sentFilters':'receivedFilters'),sent,
+    expanded:sent?openSentMessages:openInboxMessages,getProfile:()=>me,translate:t,formatDate:formatMessageDate,
+    onRead:(message,button)=>run(button,async()=>{
+      await api(`/api/me/messages/${encodeURIComponent(message.id)}/read`,'PUT',{});
+      message.readAt=new Date().toISOString();await refreshInbox();
+    }),
+    onDelete:(message,button)=>run(button,async()=>{
+      await api(`/api/me/${sent?'sent-messages':'messages'}/${encodeURIComponent(message.id)}`,'DELETE',{});
+      await (sent?refreshSentMessages():refreshInbox());
+    }),
+    onFilter:sent?undefined:(visible,filter)=>{
+      $('readAll').disabled=!visible.some(message=>!message.readAt);
+      $('readAll').textContent=t(filter?'Angezeigte gelesen':'Alle gelesen');
+    }
+  });
+  if(sent)sentMessageList=list;else receivedMessageList=list;
+  return list;
 }
 function renderSentMessages(){
-  const list=$('sentMessages');list.replaceChildren();$('cleanupSentMessages').disabled=!sentMessages.length;
-  if(!sentMessages.length){const empty=document.createElement('p');empty.className='empty';empty.textContent=t('Noch keine gesendeten Nachrichten.');list.append(empty)}
-  for(const message of sentMessages){
-    const item=row();item.classList.add('message');item.append(messageContent(message));
-    const remove=document.createElement('button');remove.type='button';remove.className='small danger';remove.textContent=t('Löschen');
-    remove.onclick=()=>run(remove,async()=>{await api('/api/me/sent-messages/'+encodeURIComponent(message.id),'DELETE',{});await refreshSentMessages()});
-    item.append(remove);list.append(item);
-  }
+  $('cleanupSentMessages').disabled=!sentMessages.length;
+  getMessageList(true).update(sentMessages);
 }
 $('refreshSentMessages').addEventListener('click',()=>run($('refreshSentMessages'),refreshSentMessages));
 $('cleanupSentMessages').onclick=()=>{
@@ -295,6 +299,10 @@ $('cleanupSentMessages').onclick=()=>{
 let lastSentMessageId = null;
 const deliveryLabels = {pending:"ausstehend",sending:"wird gesendet",retry:"Retry",accepted:"vom Push-Dienst angenommen",confirmed:"vom Browser bestätigt",unconfirmed:"nicht bestätigt",failed:"fehlgeschlagen"};
 function formatDate(value){return new Date(value).toLocaleString(locale(),{dateStyle:'medium',timeStyle:'short'})}
+function formatMessageDate(value){
+  const date=new Date(value);
+  return date.getFullYear()!==new Date().getFullYear()?formatDate(value):date.toLocaleString(locale(),{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+}
 function messageLogEntries(message){
   const label=(en,de)=>language==='en'?en:de;
   const events=[{at:message.createdAt,text:label('Message queued','Nachricht eingereiht')}];
@@ -328,65 +336,10 @@ async function retryPushReceipts(){
     registration.active.postMessage({type:'retry-push-receipts'},[channel.port2]);
   });
 }
-function inboxMessagesForTopic(messages,filter){
-  return messages.filter(message=>!filter || (filter==='direct'?!message.topic:message.topic===filter.slice(6)));
-}
 function renderInbox(){
-  const list=$('inbox');list.replaceChildren();
-  const filter=$('inboxTopicFilter'),selected=filter.value;
-  const topicNames=new Set([...(me?.topics || []).map(topic=>topic.name),...inboxMessages.map(message=>message.topic).filter(Boolean)]);
-  if(selected.startsWith('topic:'))topicNames.add(selected.slice(6));
-  filter.replaceChildren();
-  for(const [value,label] of [['',t('Alle Topics')],['direct',t('Direktnachricht')],...[...topicNames].sort().map(name=>['topic:'+name,name])]){
-    const option=document.createElement('option');option.value=value;option.textContent=label;filter.append(option);
-  }
-  filter.value=selected;
-  const visible=inboxMessagesForTopic(inboxMessages,selected);
-  openInboxMessages=new Set([...openInboxMessages].filter(id=>inboxMessages.some(message=>message.id===id)));
-  const unread=inboxMessages.filter(m=>!m.readAt).length;
-  $('unreadBadge').textContent=unread?String(unread):'';
-  $('unreadBadge').hidden=!unread;
-  $('readAll').disabled=!visible.some(message=>!message.readAt);
-  $('readAll').textContent=t(selected?'Angezeigte gelesen':'Alle gelesen');
-  if(!visible.length){const p=document.createElement('p');p.className='empty';p.textContent=t(selected?'Keine Nachrichten für dieses Topic.':'Noch keine Nachrichten vorhanden.');list.append(p);return}
-  const headings=document.createElement('div');headings.className='inbox-list-heading';headings.setAttribute('aria-hidden','true');
-  for(const label of ['Datum','Topic','Titel','Aktionen']){const column=document.createElement('span');column.textContent=t(label);headings.append(column)}list.append(headings);
-  for(const m of visible){
-    const item=row();item.id='message-'+m.id;item.classList.add('message','inbox-entry');if(!m.readAt)item.classList.add('unread');
-    const details=document.createElement('details'),summary=document.createElement('summary'),time=document.createElement('time'),topic=document.createElement('span'),title=document.createElement('div'),name=document.createElement('b');
-    details.className='inbox-details';summary.className='inbox-summary';time.dateTime=m.createdAt;time.textContent=formatDate(m.createdAt);
-    topic.className='inbox-topic';topic.textContent=m.topic || t('Direktnachricht');
-    title.className='inbox-title';name.className='message-title';name.textContent=m.title;
-    const controls=document.createElement('div');controls.className='message-controls';
-    const readState=document.createElement('span');readState.className='message-read-state';
-    readState.textContent=m.readAt?(language==='en'?'Read':'Gelesen'):t('Ungelesen');
-    title.append(name,readState);summary.append(time,topic,title);details.append(summary,messageContent(m));
-    details.open=openInboxMessages.has(m.id);
-    details.addEventListener('toggle',()=>{
-      if(details.open)openInboxMessages.add(m.id);else openInboxMessages.delete(m.id);
-    });
-    if(!m.readAt){
-      const read=document.createElement('button');read.type='button';read.className='small quiet';read.textContent=t('Als gelesen markieren');controls.append(read);
-      let marking=false;
-      const markRead=()=>{
-        if(marking || m.readAt)return;
-        marking=true;
-        return run(read,async()=>{
-          try{
-            await api(`/api/me/messages/${encodeURIComponent(m.id)}/read`,'PUT',{});
-            m.readAt=new Date().toISOString();
-            item.classList.remove('unread');readState.textContent=language==='en'?'Read':'Gelesen';
-            await refreshInbox();
-          }finally{marking=false}
-        });
-      };
-      read.addEventListener('click',markRead);
-      details.addEventListener('toggle',()=>{if(details.open)markRead()});
-    }
-    const del=document.createElement('button');del.className='small quiet danger';del.textContent=t('Löschen');controls.append(del);
-    del.addEventListener('click',()=>run(del,async()=>{await api(`/api/me/messages/${encodeURIComponent(m.id)}`,'DELETE',{});await refreshInbox()}));
-    item.append(details,controls);list.append(item);
-  }
+  const unread=inboxMessages.filter(message=>!message.readAt).length;
+  $('unreadBadge').textContent=unread?String(unread):'';$('unreadBadge').hidden=!unread;
+  getMessageList().update(inboxMessages);
 }
 function linkedMessageId(){
   if(location.hash.startsWith('#message-')){
@@ -399,7 +352,7 @@ async function readLinkedMessage(){
   const id=linkedMessageId();if(!id)return null;
   const message=inboxMessages.find(message=>message.id===id);
   if(!message)return null;
-  if(!message.readAt){
+  if(!message.readAt&&!me.manualRead){
     await api(`/api/me/messages/${encodeURIComponent(id)}/read`,'PUT',{});
     message.readAt=new Date().toISOString();
   }
@@ -425,7 +378,7 @@ async function loadInbox(){
   if(linkedId && linkedMessageId()!==linkedId)return;
   if(linkedId){
     setMessageTab('received');if(resetViews)resetViews(true);
-    if($('inboxTopicFilter'))$('inboxTopicFilter').value='';
+    if(receivedMessageList)receivedMessageList.filter='';
     openInboxMessages.add(linkedId);
   }
   renderInbox();
@@ -434,7 +387,6 @@ async function loadInbox(){
     if(item){
       const dialog=$('sendDialog');if(dialog?.open)dialog.close();
       closeHeaderMenu();
-      for(const selector of ['.inbox-details','.message-fulltext']){const details=item.querySelector(selector);if(details)details.open=true;}
       item.scrollIntoView({block:'start'});
       lastOpenedMessage=linkedId;lastOpenedMessageAt=Date.now();
     }
@@ -474,10 +426,9 @@ function renderSendTargets(){
 }
 $('targetType').addEventListener('change',renderSendTargets);
 $('refreshInbox').addEventListener('click',()=>run($('refreshInbox'),async()=>{window.retryLiveSync?.();await refreshInbox();status(t('Posteingang aktualisiert.'))}));
-$('inboxTopicFilter').addEventListener('change',renderInbox);
 $('readAll').addEventListener('click',()=>run($('readAll'),async()=>{
-  const filter=$('inboxTopicFilter').value;
-  await api('/api/me/messages/read-all','POST',filter?{topic:filter==='direct'?'':filter.slice(6)}:{});
+  const filter=receivedMessageList?.filter || '';
+  await api('/api/me/messages/read-all','POST',window.PushieMessages.readFilter(filter));
   await refreshInbox();status(t(filter?'Angezeigte Nachrichten als gelesen markiert.':'Alle Nachrichten als gelesen markiert.'));
 }));
 $('bootstrapRegister').addEventListener('click',()=>run($('bootstrapRegister'),async()=>{
@@ -546,15 +497,15 @@ async function subscribeWithCurrentKey(pushManager,applicationServerKey){
   return pushManager.subscribe(options);
  }
 }
-$('subscribe').addEventListener('click',()=>run($('subscribe'),async()=>{
+async function registerCurrentDevice(name){
   if (!reg || !vapidPublicKey || !('PushManager' in window)) throw new Error(t('Web Push wird auf diesem Gerät nicht unterstützt. iOS: Home-Bildschirm-App verwenden.'));
-  const name=$('deviceName').value.trim();if(!name)throw new Error(t('Gerätenamen eingeben'));
-  // The permission prompt must be triggered as a consequence of user interaction.
+  name=name.trim();if(!name)throw new Error(t('Gerätenamen eingeben'));
   const subscription=await subscribeWithCurrentKey(reg.pushManager,b64ToBytes(vapidPublicKey));
   const result=await api('/api/me/devices','POST',{name,subscription:subscription.toJSON()});
-  localStorage.setItem('webpushDeviceId',result.id);
-  await refresh();status(t('Push ist für dieses Gerät aktiviert.'));
-}));
+  try{localStorage.setItem('webpushDeviceId',result.id)}catch(_){}
+  await refresh();status(t('Push ist für dieses Gerät aktiviert.'));return result;
+}
+$('subscribe').addEventListener('click',()=>run($('subscribe'),()=>registerCurrentDevice($('deviceName').value)));
 function openNotificationMessage(id,{refresh=true}={}){
   if(typeof id!=='string' || !id || id.length>128)return;
   if(id===lastOpenedMessage && Date.now()-lastOpenedMessageAt<1500)return;
@@ -592,11 +543,12 @@ if('serviceWorker' in navigator)navigator.serviceWorker.addEventListener('messag
 });
 (async()=>{
   try{
+    window.pushieOnboarding=window.createPushieOnboarding({getProfile:()=>me,getRegistration:()=>reg,register:registerCurrentDevice,api,translate:t});
     if (!('PublicKeyCredential' in window))throw new Error(t('Passkeys sind hier nicht verfügbar. HTTPS oder localhost verwenden.'));
     const config=await api('/api/config');vapidPublicKey=config.vapidPublicKey;bootstrapAvailable=!!config.bootstrapAvailable;
     // Inbox loading must not wait for service-worker activation (which can stall on iOS).
     if('serviceWorker' in navigator){
-      navigator.serviceWorker.register('/sw.js',{updateViaCache:'none'}).then(registration=>{reg=registration})
+      navigator.serviceWorker.register('/sw.js',{updateViaCache:'none'}).then(registration=>{reg=registration;window.pushieOnboarding?.update(me)})
         .catch(()=>{/* The inbox remains available when worker registration fails. */});
     }
     await recoverNotificationMessage();
@@ -788,6 +740,14 @@ async function setUiLanguage(value){
 }
 $('accountLanguage').addEventListener('change',()=>run($('accountLanguage'),()=>setUiLanguage($('accountLanguage').value)));
 
+$('manualRead').addEventListener('change',()=>{
+  const input=$('manualRead'),previous=!!me?.manualRead;
+  run(input,async()=>{
+    try{const result=await api('/api/me/settings','PUT',{manualRead:input.checked});me.manualRead=result.manualRead;input.checked=!!result.manualRead;renderInbox();status(t('Leseverhalten gespeichert.'))}
+    catch(error){input.checked=previous;throw error}
+  });
+});
+
 async function setThemePreference(theme){
  const previous=me?.theme || themePreference;
  try{
@@ -812,7 +772,8 @@ function clearAccountState(){
  $('centralLogList')?.replaceChildren();
  $('centralLogFilters')?.reset();centralLogOffset=0;centralLogRequest++;
  if($('centralLogCount'))$('centralLogCount').textContent='';
- inboxMessages=[];openInboxMessages.clear();$('inboxTopicFilter').value='';sentMessages=[];$('sentMessages').replaceChildren();adminTargets=null;lastSentMessageId=null;storageCleanupPreview=null;
+ window.pushieOnboarding?.reset();receivedMessageList?.clear();sentMessageList?.clear();
+ inboxMessages=[];openInboxMessages.clear();openSentMessages.clear();sentMessages=[];$('sentMessages').replaceChildren();adminTargets=null;lastSentMessageId=null;storageCleanupPreview=null;
  for(const id of ['inbox','topics','devices','adminUsers','integrationKeys','storageStats','sendResult','sendDialogStatus','recipientSummary','inviteResult','cleanupPreview','storageResult','passkeyCount','welcome','unreadBadge','sendTarget','targetDevices','apiKeys'])$(id)?.replaceChildren();
  $('newApiKey').hidden=true;$('newIntegrationKey').hidden=true;
  for(const input of $('account').querySelectorAll('input[type="text"],input:not([type]),input[type="password"],textarea'))input.value='';

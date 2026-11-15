@@ -82,12 +82,22 @@ the proxy must overwrite or append `X-Forwarded-For`.
 
 ### Inbox and device topic delivery
 
-The inbox is a compact list showing date, topic, title, read state, and actions.
-Open a row to read its body and optional full text. Opening a message marks it
-read; browsing the list or changing the filter does not. Use **Filter by topic**
-to show one topic or direct messages, including messages from deleted topics.
-With a filter active, **Mark shown as read** applies only to that topic or direct
-messages. The unread badge continues to count the whole inbox.
+Received and Sent share a compact list with a topic/delivery-reason pill beside
+the title, date and short actions on the right, and a responsive two-line message
+preview below. An inline **… more** link reveals the full body and long text;
+**less** collapses it. Preview length follows the rendered width and font size,
+not a fixed character limit. An unread received message has only a leading dot.
+
+Clickable filter pills show counts from the messages actually present in each
+tab, including messages from deleted topics. Direct messages and broadcasts
+have separate filters. Counts include read and unread messages. **Mark shown as
+read** affects only the selected filter; the unread badge counts the whole inbox.
+
+Under **Account settings → Reading messages**, enable **Mark messages as read
+manually** to keep messages unread when expanding them or tapping a push
+notification. Use **Read** or **Mark all as read** explicitly. This account
+preference syncs across devices. By default, opening a received message marks it
+read automatically; browsing previews or filtering never marks messages read.
 
 Under **Devices → Topic delivery**, choose separately for each device:
 
@@ -104,8 +114,38 @@ subscription preserves its device settings.
 The authenticated browser API `PUT /api/me/devices/{id}/topics` accepts
 `{"topics":null}` for all subscribed topics, `{"topics":["backup"]}` for selected
 topics, or `{"topics":[]}` for none. A user can update only their own devices.
-`POST /api/me/messages/read-all` accepts an optional `{"topic":"backup"}` filter;
-an empty topic selects direct messages and omitting the field selects all messages.
+`POST /api/me/messages/read-all` accepts `{"topic":"backup"}`, or
+`{"deliveryReason":"direct"}` / `{"deliveryReason":"broadcast"}`. Omit both to
+select all messages. The legacy empty topic filter selects all non-topic messages.
+
+### First-login setup
+
+Accounts without registered devices see a setup guide on their first login.
+It explains installation for the detected platform, then offers registration
+of the current browser/app with an editable suggested name. Where the browser
+exposes a device model, that model is used; otherwise a platform/browser name is
+suggested. Browsers generally do not expose the user's custom operating-system
+device name. Choosing **Later** dismisses the guide and saves completion; reopen
+it anytime under **Devices → Set up this device**. Configured accounts are not
+interrupted by onboarding after an update.
+
+- **iPhone/iPad:** add Pushie to the Home Screen and open it from that icon before
+  enabling push (iOS/iPadOS 16.4 or later). The guide includes Safari Share → Add
+  to Home Screen steps and prevents registration in an ordinary browser tab.
+- **Android:** installation is optional in supported browsers. The guide explains
+  the browser's Install app / Add to Home screen option and offers an install
+  button when the browser supplies an installation prompt.
+- **Mac/Windows:** installation is optional in supported browsers. The guide
+  explains optional app installation or Safari's Add to Dock where available.
+
+Notification permission is requested only after clicking **Enable push**. If
+permission is denied, the guide preserves the entered name and explains how to
+allow notifications in browser/system settings. Unsupported browsers can still
+use the inbox. Registration uses the existing push-subscription flow.
+
+References: [Apple Web Push requirements](https://developer.apple.com/documentation/usernotifications/sending-web-push-notifications-in-web-apps-and-browsers),
+[Chrome notifications on Android](https://support.google.com/chrome/answer/3220216?co=GENIE.Platform%3DAndroid&hl=en),
+and [Chrome device model hints](https://developer.chrome.com/docs/privacy-security/user-agent-client-hints).
 
 Keep the public hostname stable: passkeys are tied to it.
 

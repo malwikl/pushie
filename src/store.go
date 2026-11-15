@@ -16,15 +16,17 @@ import (
 )
 
 type user struct {
-	APIKeys     []personalAPIKey      `json:"apiKeys,omitempty"`
-	Theme       string                `json:"theme,omitempty"`
-	Language    string                `json:"language,omitempty"`
-	ID          string                `json:"id"`
-	Name        string                `json:"name"`
-	Role        string                `json:"role,omitempty"`
-	Credentials []webauthn.Credential `json:"credentials"`
-	Topics      []string              `json:"topics"`
-	CreatedAt   time.Time             `json:"createdAt"`
+	ManualRead         bool                  `json:"manualRead,omitempty"`
+	OnboardingComplete bool                  `json:"onboardingComplete,omitempty"`
+	APIKeys            []personalAPIKey      `json:"apiKeys,omitempty"`
+	Theme              string                `json:"theme,omitempty"`
+	Language           string                `json:"language,omitempty"`
+	ID                 string                `json:"id"`
+	Name               string                `json:"name"`
+	Role               string                `json:"role,omitempty"`
+	Credentials        []webauthn.Credential `json:"credentials"`
+	Topics             []string              `json:"topics"`
+	CreatedAt          time.Time             `json:"createdAt"`
 }
 
 func (u *user) WebAuthnID() []byte                         { b, _ := base64.RawURLEncoding.DecodeString(u.ID); return b }
@@ -35,16 +37,27 @@ func (u *user) WebAuthnCredentials() []webauthn.Credential { return u.Credential
 func (u *user) isAdmin() bool { return u != nil && u.Role == "admin" }
 
 type inboxMessage struct {
-	SentDeleted  bool       `json:"sentDeleted,omitempty"` // Hide sender history without removing recipient data or delivery jobs.
-	SenderUserID string     `json:"senderUserId,omitempty"`
-	LongText     string     `json:"longText,omitempty"`
-	ID           string     `json:"id"`
-	Title        string     `json:"title"`
-	Body         string     `json:"body"`
-	Topic        string     `json:"topic,omitempty"`
-	Tag          string     `json:"tag,omitempty"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	ReadAt       *time.Time `json:"readAt,omitempty"`
+	DeliveryReason string     `json:"deliveryReason,omitempty"`
+	SentDeleted    bool       `json:"sentDeleted,omitempty"` // Hide sender history without removing recipient data or delivery jobs.
+	SenderUserID   string     `json:"senderUserId,omitempty"`
+	LongText       string     `json:"longText,omitempty"`
+	ID             string     `json:"id"`
+	Title          string     `json:"title"`
+	Body           string     `json:"body"`
+	Topic          string     `json:"topic,omitempty"`
+	Tag            string     `json:"tag,omitempty"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	ReadAt         *time.Time `json:"readAt,omitempty"`
+}
+
+func messageWithReason(db *database, message inboxMessage) inboxMessage {
+	// Recover the reason for messages created before it was stored explicitly.
+	if message.Topic == "" && message.DeliveryReason == "" {
+		if record := db.MessageLog[message.ID]; record != nil && record.Target.Broadcast {
+			message.DeliveryReason = "broadcast"
+		}
+	}
+	return message
 }
 
 type device struct {
@@ -264,7 +277,11 @@ func (s *store) userSnapshot(userID string, inbox bool) database {
 	var out database
 	out.initialize()
 	if inbox {
-		out.Messages[userID] = s.db.Messages[userID]
+		messages := make([]inboxMessage, len(s.db.Messages[userID]))
+		for i, message := range s.db.Messages[userID] {
+			messages[i] = messageWithReason(&s.db, message)
+		}
+		out.Messages[userID] = messages
 		for id, d := range s.db.Deliveries {
 			if d.UserID == userID {
 				copy := *d

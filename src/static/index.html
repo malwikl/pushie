@@ -63,7 +63,6 @@
           <button id="sentTab" type="button" role="tab" aria-selected="false" aria-controls="sentPanel" tabindex="-1">Gesendet</button>
         </div>
         <div class="message-toolbar">
-          <label id="inboxTopicFilterControl" class="inbox-topic-filter" for="inboxTopicFilter">Nach Topic filtern <select id="inboxTopicFilter"><option value="">Alle Topics</option></select></label>
           <div class="toolbar-actions">
             <button id="refreshInbox" type="button" class="small quiet refresh-control" aria-label="Aktualisieren" title="Aktualisieren"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3A7 7 0 0 0 17.9 17"/></svg><span class="button-label">Aktualisieren</span></button>
             <button id="refreshSentMessages" type="button" class="small quiet refresh-control" aria-label="Aktualisieren" title="Aktualisieren" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3A7 7 0 0 0 17.9 17"/></svg><span class="button-label">Aktualisieren</span></button>
@@ -71,9 +70,11 @@
           </div>
         </div>
         <div id="receivedPanel" role="tabpanel" aria-labelledby="receivedTab" tabindex="0">
+          <div id="receivedFilters" class="message-filters" role="group" aria-label="Nach Topic filtern"></div>
           <div id="inbox" class="list" aria-live="polite"></div>
         </div>
         <div id="sentPanel" role="tabpanel" aria-labelledby="sentTab" tabindex="0" hidden>
+          <div id="sentFilters" class="message-filters" role="group" aria-label="Nach Topic filtern"></div>
           <button id="cleanupSentMessages" type="button" class="small danger">Alle gesendeten Nachrichten löschen</button>
           <div id="sentMessages" class="list" aria-live="polite"></div>
         </div>
@@ -85,6 +86,7 @@
         <label for="deviceName">Gerätename</label>
         <input id="deviceName" maxlength="80" placeholder="z. B. Mein iPhone" value="Mein Gerät">
         <button id="subscribe" class="primary">Push auf diesem Gerät aktivieren</button>
+        <button id="setupDevice" type="button">Gerät einrichten</button>
         <h3>Registrierte Geräte</h3>
         <p class="hint">Wähle je Gerät, welche abonnierten Topics Push auslösen. Alle Topic-Nachrichten bleiben im Posteingang. Direktnachrichten sind davon unabhängig.</p>
         <div id="devices" class="list"></div>
@@ -95,6 +97,9 @@
         <label for="accountTheme">Design</label>
         <select id="accountTheme"><option value="auto">Automatisch (System)</option><option value="light">Hell</option><option value="dark">Dunkel</option></select>
         <p class="hint">Automatisch folgt dem hellen oder dunklen Erscheinungsbild deines Geräts.</p>
+        <h3>Nachrichten lesen</h3>
+        <label class="check-row"><input id="manualRead" type="checkbox" role="switch"> Nachrichten manuell als gelesen markieren</label>
+        <p class="hint">Wenn aktiviert, bleiben Nachrichten beim Öffnen und beim Antippen einer Push-Benachrichtigung ungelesen. Verwende Gelesen oder Alle gelesen.</p>
         </section><section class="account-section"><h3>Sicherheit</h3>
         <p id="passkeyCount" class="hint"></p>
         <button id="addPasskey">Weiteren Passkey hinzufügen</button>
@@ -190,6 +195,28 @@
         <p id="storageResult" class="hint" role="status" aria-live="polite"></p>
       </section>
 </div>
+    <dialog id="onboardingDialog" class="onboarding-dialog" aria-labelledby="onboardingTitle">
+      <p id="onboardingProgress" class="hint"></p>
+      <h2 id="onboardingTitle">Willkommen bei Pushie</h2>
+      <div id="onboardingInstallStep">
+        <p id="onboardingInstallInfo"></p>
+        <ol id="onboardingInstructions"></ol>
+        <button id="onboardingInstall" type="button" hidden>App installieren</button>
+      </div>
+      <div id="onboardingRegisterStep" hidden>
+        <p>Aktiviere Push für diesen Browser oder diese installierte App. Du kannst den vorgeschlagenen Namen ändern.</p>
+        <label for="onboardingDeviceName">Gerätename</label>
+        <input id="onboardingDeviceName" maxlength="80" autocomplete="off">
+        <p class="hint">Topics abonnierst du anschließend unter Topics. Die Zustellung je Gerät kannst du jederzeit unter Geräte ändern.</p>
+      </div>
+      <p id="onboardingStatus" class="hint" role="status" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button id="onboardingLater" type="button">Später</button>
+        <button id="onboardingBack" type="button" hidden>Zurück</button>
+        <button id="onboardingNext" type="button" class="primary">Weiter</button>
+        <button id="onboardingRegister" type="button" class="primary" hidden>Push aktivieren</button>
+      </div>
+    </dialog>
     <p role="status" aria-live="polite" id="status"></p>
     <footer>pushie · v<span id="appVersion">__PUSHIE_VERSION__</span></footer>
   </main>
@@ -197,6 +224,8 @@
   <script src="/version.js?v=__PUSHIE_VERSION__" defer></script>
   <script src="/trace.js?v=__PUSHIE_VERSION__" defer></script>
   <script src="/sync.js?v=__PUSHIE_VERSION__" defer></script>
+  <script src="/messages.js?v=__PUSHIE_VERSION__" defer></script>
+  <script src="/onboarding.js?v=__PUSHIE_VERSION__" defer></script>
   <script src="/app.js?v=__PUSHIE_VERSION__" defer></script>
   <script src="/pull-refresh.js?v=__PUSHIE_VERSION__" defer></script>
 </body>

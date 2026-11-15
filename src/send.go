@@ -230,6 +230,9 @@ func (a *application) dispatchNotification(w http.ResponseWriter, r *http.Reques
 		}
 		for userID := range targets {
 			message := inboxMessage{ID: id, Title: req.Title, Body: req.Body, Topic: req.Topic, Tag: req.Tag, LongText: req.LongText, CreatedAt: now}
+			if req.Broadcast {
+				message.DeliveryReason = "broadcast"
+			}
 			message.SenderUserID = senderID
 			list := append(db.Messages[userID], message)
 			if len(list) > maxInboxMessages {
@@ -253,6 +256,9 @@ func (a *application) dispatchNotification(w http.ResponseWriter, r *http.Reques
 				CreatedAt: now, ExpiresAt: now.Add(deliveryLifetime),
 			}
 			db.Deliveries[jobID].SenderUserID = senderID
+			if req.Broadcast {
+				db.Deliveries[jobID].DeliveryReason = "broadcast"
+			}
 			result.Recipients++
 			result.Queued++
 		}

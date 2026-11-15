@@ -28,6 +28,10 @@ test('failed read requests leave the message unread and the link available to re
  f.context.api=async()=>{throw new Error('offline')};
  await assert.rejects(f.open(),/offline/);assert.equal(message.readAt,null);assert.equal(f.context.location.hash,'#message-one');
 });
+test('manual-read preference opens notification links without marking them read',async()=>{
+ const message={id:'one',readAt:null},f=fixture('#message-one',[message],{id:'user',manualRead:true});
+ assert.equal(await f.open(),'one');assert.equal(message.readAt,null);assert.equal(f.calls.length,0);
+});
 
 test('cold app launch uses query target when the fragment is absent',async()=>{
  const message={id:'one',readAt:null};const f=fixture('',[message]);
@@ -58,8 +62,7 @@ test('foreground recovery ignores abandoned notification clicks',async()=>{
 
 function launchFixture(messages,hash=''){
  const calls=[],scrolled=[],tabs=[],url=new URL('https://push.example/'+hash);
- const filter={value:'topic:backup'};
- const context=vm.createContext({URL,URLSearchParams,Date,identityEpoch:0,$:id=>id==='inboxTopicFilter'?filter:null,closeHeaderMenu(){},me:{id:'user'},reg:null,inboxMessages:[],openInboxMessages:new Set(),
+ const context=vm.createContext({URL,URLSearchParams,Date,identityEpoch:0,$:()=>null,receivedMessageList:{filter:'topic:backup'},closeHeaderMenu(){},me:{id:'user'},reg:null,inboxMessages:[],openInboxMessages:new Set(),
   location:url,history:{replaceState(_,__,next){url.href=new URL(next,url).href}},
   api:async(path)=>{calls.push(path);return {messages}},refreshSentMessages:async()=>{},setMessageTab(tab){tabs.push(tab)},renderInbox(){},resetViews(){},
   document:{getElementById:id=>({querySelector:()=>null,scrollIntoView:()=>scrolled.push(id)})}});
@@ -74,7 +77,7 @@ test('opening without a notification URL leaves every message unread',async()=>{
 test('notification target wins over newer unread messages on opening',async()=>{
  const f=launchFixture([{id:'selected',createdAt:'2026-01-01'},{id:'newest',createdAt:'2026-02-01'}],'#message-selected');
  await f.refresh({openUnread:true});assert.deepEqual(f.scrolled,['message-selected']);
- assert.equal(f.context.$('inboxTopicFilter').value,'');assert.equal(f.context.openInboxMessages.has('selected'),true);
+ assert.equal(f.context.receivedMessageList.filter,'');assert.equal(f.context.openInboxMessages.has('selected'),true);
 });
 test('ordinary polling and opening with no unread messages do not navigate',async()=>{
  const f=launchFixture([{id:'unread'}]);await f.refresh();assert.deepEqual(f.scrolled,[]);

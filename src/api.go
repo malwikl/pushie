@@ -24,8 +24,10 @@ func (a *application) userRoutes(mux *http.ServeMux) {
 			return
 		}
 		var req struct {
-			Language *string `json:"language"`
-			Theme    *string `json:"theme"`
+			Language           *string `json:"language"`
+			Theme              *string `json:"theme"`
+			ManualRead         *bool   `json:"manualRead"`
+			OnboardingComplete *bool   `json:"onboardingComplete"`
 		}
 		if !decode(w, r, &req) {
 			return
@@ -38,7 +40,7 @@ func (a *application) userRoutes(mux *http.ServeMux) {
 			failure(w, 400, "Ungültiges Design")
 			return
 		}
-		if req.Language == nil && req.Theme == nil {
+		if req.Language == nil && req.Theme == nil && req.ManualRead == nil && req.OnboardingComplete == nil {
 			failure(w, 400, "Keine Einstellungen angegeben")
 			return
 		}
@@ -49,6 +51,12 @@ func (a *application) userRoutes(mux *http.ServeMux) {
 			}
 			if req.Language != nil {
 				account.Language = *req.Language
+			}
+			if req.ManualRead != nil {
+				account.ManualRead = *req.ManualRead
+			}
+			if req.OnboardingComplete != nil {
+				account.OnboardingComplete = *req.OnboardingComplete
 			}
 			if req.Theme != nil {
 				account.Theme = *req.Theme
@@ -62,7 +70,7 @@ func (a *application) userRoutes(mux *http.ServeMux) {
 			return
 		}
 		saved := a.db.userByID(u.ID)
-		reply(w, 200, map[string]string{"language": saved.Language, "theme": saved.Theme})
+		reply(w, 200, map[string]any{"language": saved.Language, "theme": saved.Theme, "manualRead": saved.ManualRead, "onboardingComplete": saved.OnboardingComplete})
 	}))
 	mux.HandleFunc("GET /api/me", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
 		snap := a.db.userSnapshot(u.ID, false)
@@ -81,7 +89,7 @@ func (a *application) userRoutes(mux *http.ServeMux) {
 		if u.Topics == nil {
 			u.Topics = []string{}
 		}
-		reply(w, 200, map[string]any{"id": u.ID, "name": u.Name, "topics": topics, "subscriptions": u.Topics, "devices": devices, "passkeyCount": len(u.Credentials), "role": u.Role, "language": u.Language, "theme": u.Theme})
+		reply(w, 200, map[string]any{"id": u.ID, "name": u.Name, "topics": topics, "subscriptions": u.Topics, "devices": devices, "passkeyCount": len(u.Credentials), "role": u.Role, "language": u.Language, "theme": u.Theme, "manualRead": u.ManualRead, "onboardingComplete": u.OnboardingComplete})
 	}))
 	mux.HandleFunc("DELETE /api/me/sent-messages/{id}", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
 		count := 0
@@ -128,14 +136,14 @@ func (a *application) userRoutes(mux *http.ServeMux) {
 			for _, m := range list {
 				if m.SenderUserID == u.ID && !m.SentDeleted {
 					m.ReadAt = nil
-					messages[m.ID] = m
+					messages[m.ID] = messageWithReason(&snap, m)
 				}
 			}
 		}
 		for _, d := range snap.Deliveries {
 			if d.SenderUserID == u.ID && !d.SentDeleted {
 				if _, ok := messages[d.MessageID]; !ok {
-					messages[d.MessageID] = inboxMessage{ID: d.MessageID, Title: d.Content.Title, Body: d.Content.Body, LongText: d.Content.LongText, Topic: d.Content.Topic, CreatedAt: d.CreatedAt}
+					messages[d.MessageID] = messageWithReason(&snap, inboxMessage{ID: d.MessageID, Title: d.Content.Title, Body: d.Content.Body, LongText: d.Content.LongText, Topic: d.Content.Topic, CreatedAt: d.CreatedAt, DeliveryReason: d.DeliveryReason})
 				}
 			}
 		}
@@ -191,7 +199,8 @@ func (a *application) userRoutes(mux *http.ServeMux) {
 	}))
 	mux.HandleFunc("POST /api/me/messages/read-all", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
 		var req struct {
-			Topic *string `json:"topic"`
+			Topic          *string `json:"topic"`
+			DeliveryReason *string `json:"deliveryReason"`
 		}
 		if r.ContentLength != 0 && !decode(w, r, &req) {
 			return
@@ -200,10 +209,20 @@ func (a *application) userRoutes(mux *http.ServeMux) {
 			failure(w, 400, "Ungültiges Topic")
 			return
 		}
+		if req.DeliveryReason != nil && (*req.DeliveryReason != "direct" && *req.DeliveryReason != "broadcast" || req.Topic != nil) {
+			failure(w, 400, "Ungültiger Nachrichtenfilter")
+			return
+		}
 		err := a.db.update(func(d *database) error {
 			now := time.Now().UTC()
 			for i := range d.Messages[u.ID] {
-				if d.Messages[u.ID][i].ReadAt == nil && (req.Topic == nil || d.Messages[u.ID][i].Topic == *req.Topic) {
+				message := messageWithReason(d, d.Messages[u.ID][i])
+				reason := message.DeliveryReason
+				if reason == "" {
+					reason = "direct"
+				}
+				matchesReason := req.DeliveryReason == nil || (message.Topic == "" && reason == *req.DeliveryReason)
+				if message.ReadAt == nil && (req.Topic == nil || message.Topic == *req.Topic) && matchesReason {
 					d.Messages[u.ID][i].ReadAt = &now
 				}
 			}

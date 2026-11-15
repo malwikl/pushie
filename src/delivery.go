@@ -35,6 +35,7 @@ const (
 )
 
 type delivery struct {
+	DeliveryReason   string       `json:"deliveryReason,omitempty"`
 	SentDeleted      bool         `json:"sentDeleted,omitempty"` // Hide sender history without removing recipient data or delivery jobs.
 	SenderUserID     string       `json:"senderUserId,omitempty"`
 	SubscriptionHash string       `json:"subscriptionHash,omitempty"`

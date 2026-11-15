@@ -7,7 +7,7 @@ function element(tag='div'){
   async dispatch(type,event={}){for(const fn of this.listeners[type] || [])await fn(event)},
   querySelectorAll(selector){
    const matches=node=>selector==='input:checked'?node.tagName==='INPUT'&&node.checked:selector.startsWith('.')?node.className?.split(' ').includes(selector.slice(1)):false;
-   return this.children.flatMap(child=>typeof child==='object'?[...(matches(child)?[child]:[]),...child.querySelectorAll(selector)]:[]);
+   return this.children.flatMap(child=>typeof child==='object'?[...(matches(child)?[child]:[]),...(child.querySelectorAll?.(selector)||[])]:[]);
   },
   querySelector(selector){return this.querySelectorAll(selector)[0] || null}
  };

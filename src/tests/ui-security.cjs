@@ -8,7 +8,7 @@ function fixture(){
  const fields=Array.from({length:4},()=>({value:'private draft'}));
  const elements=new Map();
  const $=id=>{if(!elements.has(id))elements.set(id,{value:'private',children:['private'],replaceChildren(){this.children=[]},reset(){this.wasReset=true},querySelectorAll(){return fields}});return elements.get(id)};
- const context=vm.createContext({window:{},$,t:x=>x,identityEpoch:0,resetViews:null,closeHeaderMenu(){},setMessageTab(){},inboxMessages:[{body:'private'}],openInboxMessages:new Set(['private']),adminTargets:{users:['private']},lastSentMessageId:'private',storageCleanupPreview:{private:true}});
+ const context=vm.createContext({window:{},$,t:x=>x,identityEpoch:0,resetViews:null,closeHeaderMenu(){},setMessageTab(){},inboxMessages:[{body:'private'}],openInboxMessages:new Set(['private']),openSentMessages:new Set(['private']),receivedMessageList:null,sentMessageList:null,adminTargets:{users:['private']},lastSentMessageId:'private',storageCleanupPreview:{private:true}});
  vm.runInContext(source.slice(source.indexOf('function clearAccountState()')),context);
  vm.runInContext(source.slice(source.indexOf('async function api('),source.indexOf('async function ceremony(')),context);
  return {context,$,fields};
@@ -17,7 +17,7 @@ test('logout clears cached messages, invitation codes and drafts',()=>{
  const {context,$,fields}=fixture();
  vm.runInContext('clearAccountState()',context);
  assert.equal(context.identityEpoch,1);
- assert.equal(context.openInboxMessages.size,0);assert.equal($('inboxTopicFilter').value,'');
+ assert.equal(context.openInboxMessages.size,0);assert.equal(context.openSentMessages.size,0);
  assert.deepEqual($('centralLogList').children,[]);
  assert.equal($('centralLogFilters').wasReset,true);
  assert.equal(context.inboxMessages.length,0);
