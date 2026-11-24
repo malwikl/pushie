@@ -17,8 +17,8 @@ func TestSQLiteMigratesLegacyJSONWithoutDeletingIt(t *testing.T) {
 		Users:         map[string]*user{"alex": {ID: "alex", Name: "Alex", Role: "admin", Topics: []string{"backup"}}},
 		Devices:       map[string]*device{"phone": {ID: "phone", UserID: "alex", Name: "iPhone", Subscription: dummySubscription("https://web.push.apple.com/a")}},
 		Topics:        map[string]*topic{"backup": {Name: "backup", Description: "Backups"}},
-		Messages:      map[string][]inboxMessage{"alex": {{ID: "msg1", Title: "Test", Body: "Kurz", LongText: strings.Repeat("Ausführlicher Bericht\n", 2500), CreatedAt: time.Now().UTC()}}},
-		Deliveries:    map[string]*delivery{"job1": {ID: "job1", MessageID: "msg1", UserID: "alex", DeviceID: "phone", Status: "retry", NextAttemptAt: time.Now().UTC().Add(5 * time.Minute)}},
+		Notifications: map[string][]inboxNotification{"alex": {{ID: "msg1", Title: "Test", Body: "Kurz", LongText: strings.Repeat("Ausführlicher Bericht\n", 2500), CreatedAt: time.Now().UTC()}}},
+		Deliveries:    map[string]*delivery{"job1": {ID: "job1", NotificationID: "msg1", UserID: "alex", DeviceID: "phone", Status: "retry", NextAttemptAt: time.Now().UTC().Add(5 * time.Minute)}},
 		BootstrapUsed: true,
 	}
 	raw, err := json.Marshal(old)
@@ -33,21 +33,21 @@ func TestSQLiteMigratesLegacyJSONWithoutDeletingIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	snap := s.snapshot()
-	if !snap.BootstrapUsed || snap.Users["alex"].Role != "admin" || len(snap.Devices) != 1 || len(snap.Deliveries) != 1 || len(snap.Messages["alex"][0].LongText) < 5000 {
-		t.Fatalf("legacy import incomplete: users=%d devices=%d deliveries=%d longText=%d", len(snap.Users), len(snap.Devices), len(snap.Deliveries), len(snap.Messages["alex"][0].LongText))
+	if !snap.BootstrapUsed || snap.Users["alex"].Role != "admin" || len(snap.Devices) != 1 || len(snap.Deliveries) != 1 || len(snap.Notifications["alex"][0].LongText) < 5000 {
+		t.Fatalf("legacy import incomplete: users=%d devices=%d deliveries=%d longText=%d", len(snap.Users), len(snap.Devices), len(snap.Deliveries), len(snap.Notifications["alex"][0].LongText))
 	}
 	var storedLongText string
-	if err := s.sqlDB.QueryRow("SELECT long_text FROM messages WHERE user_id=? AND id=?", "alex", "msg1").Scan(&storedLongText); err != nil {
+	if err := s.sqlDB.QueryRow("SELECT long_text FROM notifications WHERE user_id=? AND id=?", "alex", "msg1").Scan(&storedLongText); err != nil {
 		t.Fatal(err)
 	}
-	if storedLongText != old.Messages["alex"][0].LongText {
+	if storedLongText != old.Notifications["alex"][0].LongText {
 		t.Fatal("long text not stored in SQLite column")
 	}
 	if err := s.update(func(d *database) error {
-		x := d.Messages["alex"]
+		x := d.Notifications["alex"]
 		now := time.Now().UTC()
 		x[0].ReadAt = &now
-		d.Messages["alex"] = x
+		d.Notifications["alex"] = x
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -61,7 +61,7 @@ func TestSQLiteMigratesLegacyJSONWithoutDeletingIt(t *testing.T) {
 	}
 	defer reopened.Close()
 	after := reopened.snapshot()
-	if after.Messages["alex"][0].ReadAt == nil || after.Messages["alex"][0].LongText != storedLongText || after.Deliveries["job1"].Status != "retry" {
+	if after.Notifications["alex"][0].ReadAt == nil || after.Notifications["alex"][0].LongText != storedLongText || after.Deliveries["job1"].Status != "retry" {
 		t.Fatal("SQLite restart lost state")
 	}
 	original, err := os.ReadFile(legacyPath)
@@ -127,12 +127,12 @@ func TestLongTextSavedInInboxButNotInProviderPayload(t *testing.T) {
 		t.Fatal(err)
 	}
 	longText := strings.Repeat("Details here.\n", 10000)
-	response := request(t, a.routes(), "POST", "/api/send", map[string]string{"topic": "backup", "title": "Backup", "body": "Kurz", "longText": longText}, "", a.cfg.sendToken, "")
+	response := request(t, a.routes(), "POST", "/api/send", map[string]string{"topic": "backup", "title": "Backup", "body": longText}, "", a.cfg.sendToken, "")
 	if response.Code != 200 {
 		t.Fatalf("unexpected response %d %s", response.Code, response.Body.String())
 	}
 	snap := a.db.snapshot()
-	if len(snap.Messages["alex"]) != 1 || snap.Messages["alex"][0].LongText != longText {
+	if len(snap.Notifications["alex"]) != 1 || snap.Notifications["alex"][0].LongText != longText {
 		t.Fatal("long text was not stored")
 	}
 	for _, d := range snap.Deliveries {

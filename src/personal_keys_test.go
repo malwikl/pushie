@@ -121,7 +121,7 @@ func TestPersonalKeySendIsolation(t *testing.T) {
 	if sent.InboxUsers != 1 || sent.Queued != 1 {
 		t.Fatalf("targets: %+v", sent)
 	}
-	if len(a.db.snapshot().Messages["bob"]) != 0 {
+	if len(a.db.snapshot().Notifications["bob"]) != 0 {
 		t.Fatal("delivered to other account")
 	}
 	if r := request(t, h, "GET", sent.StatusURL, nil, "", token, ""); r.Code != 200 {
@@ -185,16 +185,16 @@ func TestPersonalKeyRetryNamespaces(t *testing.T) {
 	}
 	first := send(alice, `{"body":"hello"}`, 200)
 	replay := send(aliceSecond, `{"body":"hello"}`, 200)
-	if first.MessageID != replay.MessageID {
+	if first.NotificationID != replay.NotificationID {
 		t.Fatal("same account did not replay")
 	}
 	send(alice, `{"body":"changed"}`, 409)
 	other := send(bob, `{"body":"hello"}`, 200)
 	server := send(a.cfg.sendToken, `{"body":"hello","userId":"alice"}`, 200)
-	if first.MessageID == other.MessageID || first.MessageID == server.MessageID {
+	if first.NotificationID == other.NotificationID || first.NotificationID == server.NotificationID {
 		t.Fatal("retry namespace leaked")
 	}
-	if len(a.db.snapshot().Messages["alice"]) != 2 || len(a.db.snapshot().Messages["bob"]) != 1 {
+	if len(a.db.snapshot().Notifications["alice"]) != 2 || len(a.db.snapshot().Notifications["bob"]) != 1 {
 		t.Fatal("duplicate or cross account send")
 	}
 }

@@ -18,8 +18,9 @@ import (
 var topicRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,39}$`)
 
 func (a *application) userRoutes(mux *http.ServeMux) {
+	a.deviceActivityRoutes(mux)
 	a.personalKeyRoutes(mux)
-	a.messageCleanupRoutes(mux)
+	a.notificationCleanupRoutes(mux)
 	mux.HandleFunc("PUT /api/me/settings", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
 		if !a.rateLimit(w, r) {
 			return
@@ -83,19 +84,19 @@ func (a *application) userRoutes(mux *http.ServeMux) {
 		devices := make([]map[string]any, 0)
 		for _, d := range snap.Devices {
 			if d.UserID == u.ID {
-				devices = append(devices, map[string]any{"id": d.ID, "name": d.Name, "createdAt": d.CreatedAt, "topics": d.Topics})
+				devices = append(devices, map[string]any{"id": d.ID, "name": d.Name, "createdAt": d.CreatedAt, "topics": d.Topics, "lastActivityAt": d.LastActivityAt})
 			}
 		}
 		sort.Slice(devices, func(i, j int) bool { return devices[i]["name"].(string) < devices[j]["name"].(string) })
 		if u.Topics == nil {
 			u.Topics = []string{}
 		}
-		reply(w, 200, map[string]any{"id": u.ID, "name": u.Name, "topics": topics, "subscriptions": u.Topics, "devices": devices, "passkeyCount": len(u.Credentials), "role": u.Role, "language": u.Language, "theme": u.Theme, "manualRead": u.ManualRead, "onboardingComplete": u.OnboardingComplete})
+		reply(w, 200, map[string]any{"id": u.ID, "name": u.Name, "topics": topics, "subscriptions": u.Topics, "topicMutes": u.activeTopicMutes(time.Now()), "devices": devices, "passkeyCount": len(u.Credentials), "role": u.Role, "language": u.Language, "theme": u.Theme, "manualRead": u.ManualRead, "onboardingComplete": u.OnboardingComplete, "deviceChallenge": sessionHash(a.sessionToken(r))})
 	}))
-	mux.HandleFunc("DELETE /api/me/sent-messages/{id}", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
+	mux.HandleFunc("DELETE /api/me/sent-notifications/{id}", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
 		count := 0
 		err := a.db.update(func(db *database) error {
-			count = hideSentMessages(db, u.ID, r.PathValue("id"))
+			count = hideSentNotifications(db, u.ID, r.PathValue("id"))
 			return nil
 		})
 		if err != nil {
@@ -103,13 +104,13 @@ func (a *application) userRoutes(mux *http.ServeMux) {
 			return
 		}
 		if count == 0 {
-			failure(w, 404, "Nachricht nicht gefunden")
+			failure(w, 404, "Mitteilung nicht gefunden")
 			return
 		}
 		reply(w, 200, map[string]int{"deleted": count})
 	}))
-	mux.HandleFunc("POST /api/me/sent-messages/cleanup", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
-		var req messageCleanupRequest
+	mux.HandleFunc("POST /api/me/sent-notifications/cleanup", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
+		var req notificationCleanupRequest
 		if !decode(w, r, &req) {
 			return
 		}
@@ -117,17 +118,17 @@ func (a *application) userRoutes(mux *http.ServeMux) {
 			failure(w, 400, "Bestätigung erforderlich")
 			return
 		}
-		if req.IDs != nil && !validMessageSelection(req.IDs) {
-			failure(w, 400, "Nachrichtenauswahl ungültig")
+		if req.IDs != nil && !validNotificationSelection(req.IDs) {
+			failure(w, 400, "Mitteilungsauswahl ungültig")
 			return
 		}
 		count := 0
 		if err := a.db.update(func(db *database) error {
 			if req.IDs == nil {
-				count = hideSentMessages(db, u.ID, "")
+				count = hideSentNotifications(db, u.ID, "")
 			} else {
 				for _, id := range req.IDs {
-					count += hideSentMessages(db, u.ID, id)
+					count += hideSentNotifications(db, u.ID, id)
 				}
 			}
 			return nil
@@ -137,66 +138,63 @@ func (a *application) userRoutes(mux *http.ServeMux) {
 		}
 		reply(w, 200, map[string]int{"deleted": count})
 	}))
-	mux.HandleFunc("GET /api/me/sent-messages", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
+	mux.HandleFunc("GET /api/me/sent-notifications", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
 		snap := a.db.snapshot()
 		type sentView struct {
-			inboxMessage
+			inboxNotification
 			Deliveries []deliveryView `json:"deliveries"`
 		}
-		messages := map[string]inboxMessage{}
-		for _, list := range snap.Messages {
+		notifications := map[string]inboxNotification{}
+		for _, list := range snap.Notifications {
 			for _, m := range list {
 				if m.SenderUserID == u.ID && !m.SentDeleted {
 					m.ReadAt = nil
-					messages[m.ID] = messageWithReason(&snap, m)
+					notifications[m.ID] = notificationWithReason(&snap, m)
 				}
 			}
 		}
 		for _, d := range snap.Deliveries {
 			if d.SenderUserID == u.ID && !d.SentDeleted {
-				if _, ok := messages[d.MessageID]; !ok {
-					messages[d.MessageID] = messageWithReason(&snap, inboxMessage{ID: d.MessageID, Title: d.Content.Title, Body: d.Content.Body, LongText: d.Content.LongText, Topic: d.Content.Topic, CreatedAt: d.CreatedAt, DeliveryReason: d.DeliveryReason})
+				if _, ok := notifications[d.NotificationID]; !ok {
+					notifications[d.NotificationID] = notificationWithReason(&snap, inboxNotification{ID: d.NotificationID, Title: d.Content.Title, Body: d.Content.Body, LongText: d.Content.LongText, Topic: d.Content.Topic, CreatedAt: d.CreatedAt, DeliveryReason: d.DeliveryReason})
 				}
 			}
 		}
-		out := make([]sentView, 0, len(messages))
-		for _, m := range messages {
+		out := make([]sentView, 0, len(notifications))
+		for _, m := range notifications {
 			out = append(out, sentView{m, deliveryViews(snap, m.ID, "")})
 		}
 		sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
-		if len(out) > maxInboxMessages {
-			out = out[:maxInboxMessages]
+		if len(out) > maxInboxNotifications {
+			out = out[:maxInboxNotifications]
 		}
-		reply(w, 200, map[string]any{"messages": out})
+		reply(w, 200, map[string]any{"notifications": out})
 	}))
-	mux.HandleFunc("GET /api/me/messages", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
+	mux.HandleFunc("GET /api/me/notifications/unread", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
+		reply(w, http.StatusOK, map[string]int{"unread": a.db.unreadNotifications(u.ID)})
+	}))
+	mux.HandleFunc("GET /api/me/notifications", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
 		snap := a.db.userSnapshot(u.ID, true)
-		msgs := snap.Messages[u.ID]
-		unread := 0
-		for _, m := range msgs {
-			if m.ReadAt == nil {
-				unread++
-			}
-		}
+		msgs := snap.Notifications[u.ID]
 		// Stored oldest-first, display newest-first. Data is limited to 200 per account.
 		type inboxView struct {
-			inboxMessage
+			inboxNotification
 			Deliveries []deliveryView `json:"deliveries"`
 		}
 		out := make([]inboxView, 0, len(msgs))
 		for i := len(msgs) - 1; i >= 0; i-- {
-			out = append(out, inboxView{inboxMessage: msgs[i], Deliveries: deliveryViews(snap, msgs[i].ID, u.ID)})
+			out = append(out, inboxView{inboxNotification: msgs[i], Deliveries: deliveryViews(snap, msgs[i].ID, u.ID)})
 		}
-		reply(w, 200, map[string]any{"messages": out, "unread": unread})
+		reply(w, 200, map[string]any{"notifications": out, "unread": countUnreadNotifications(msgs)})
 	}))
-	mux.HandleFunc("PUT /api/me/messages/{id}/read", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
+	mux.HandleFunc("PUT /api/me/notifications/{id}/read", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
 		id := r.PathValue("id")
 		err := a.db.update(func(d *database) error {
-			for i := range d.Messages[u.ID] {
-				if d.Messages[u.ID][i].ID == id {
-					if d.Messages[u.ID][i].ReadAt == nil {
+			for i := range d.Notifications[u.ID] {
+				if d.Notifications[u.ID][i].ID == id {
+					if d.Notifications[u.ID][i].ReadAt == nil {
 						now := time.Now().UTC()
-						d.Messages[u.ID][i].ReadAt = &now
+						d.Notifications[u.ID][i].ReadAt = &now
 					}
 					return nil
 				}
@@ -204,15 +202,16 @@ func (a *application) userRoutes(mux *http.ServeMux) {
 			return errors.New("not found")
 		})
 		if err != nil {
-			failure(w, 404, "Nachricht nicht gefunden")
+			failure(w, 404, "Mitteilung nicht gefunden")
 			return
 		}
 		reply(w, 200, map[string]bool{"ok": true})
 	}))
-	mux.HandleFunc("POST /api/me/messages/read-all", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
+	mux.HandleFunc("POST /api/me/notifications/read-all", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
 		var req struct {
-			Topic          *string `json:"topic"`
-			DeliveryReason *string `json:"deliveryReason"`
+			Topic          *string         `json:"topic"`
+			DeliveryReason *string         `json:"deliveryReason"`
+			IDs            json.RawMessage `json:"ids"`
 		}
 		if r.ContentLength != 0 && !decode(w, r, &req) {
 			return
@@ -222,20 +221,35 @@ func (a *application) userRoutes(mux *http.ServeMux) {
 			return
 		}
 		if req.DeliveryReason != nil && (*req.DeliveryReason != "direct" && *req.DeliveryReason != "broadcast" || req.Topic != nil) {
-			failure(w, 400, "Ungültiger Nachrichtenfilter")
+			failure(w, 400, "Ungültiger Mitteilungsfilter")
 			return
+		}
+		var selected map[string]bool
+		if req.IDs != nil {
+			var ids []string
+			if req.Topic != nil || req.DeliveryReason != nil || json.Unmarshal(req.IDs, &ids) != nil || !validNotificationSelection(ids) {
+				failure(w, 400, "Mitteilungsauswahl ungültig")
+				return
+			}
+			selected = make(map[string]bool, len(ids))
+			for _, id := range ids {
+				selected[id] = true
+			}
 		}
 		err := a.db.update(func(d *database) error {
 			now := time.Now().UTC()
-			for i := range d.Messages[u.ID] {
-				message := messageWithReason(d, d.Messages[u.ID][i])
-				reason := message.DeliveryReason
+			for i := range d.Notifications[u.ID] {
+				if selected != nil && !selected[d.Notifications[u.ID][i].ID] {
+					continue
+				}
+				notification := notificationWithReason(d, d.Notifications[u.ID][i])
+				reason := notification.DeliveryReason
 				if reason == "" {
 					reason = "direct"
 				}
-				matchesReason := req.DeliveryReason == nil || (message.Topic == "" && reason == *req.DeliveryReason)
-				if message.ReadAt == nil && (req.Topic == nil || message.Topic == *req.Topic) && matchesReason {
-					d.Messages[u.ID][i].ReadAt = &now
+				matchesReason := req.DeliveryReason == nil || (notification.Topic == "" && reason == *req.DeliveryReason)
+				if notification.ReadAt == nil && (req.Topic == nil || notification.Topic == *req.Topic) && matchesReason {
+					d.Notifications[u.ID][i].ReadAt = &now
 				}
 			}
 			return nil
@@ -246,41 +260,42 @@ func (a *application) userRoutes(mux *http.ServeMux) {
 		}
 		reply(w, 200, map[string]bool{"ok": true})
 	}))
-	mux.HandleFunc("DELETE /api/me/messages/{id}", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
+	mux.HandleFunc("DELETE /api/me/notifications/{id}", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
 		id := r.PathValue("id")
 		err := a.db.update(func(d *database) error {
-			for i, m := range d.Messages[u.ID] {
+			for i, m := range d.Notifications[u.ID] {
 				if m.ID == id {
 					if m.SenderUserID == u.ID {
 						// Every source used to reconstruct sent history must remember
 						// the deletion, including jobs that are still being delivered.
-						for uid, list := range d.Messages {
+						for uid, list := range d.Notifications {
 							for j := range list {
 								if list[j].ID == id && list[j].SenderUserID == u.ID {
-									d.Messages[uid][j].SentDeleted = true
+									d.Notifications[uid][j].SentDeleted = true
 								}
 							}
 						}
 						for _, job := range d.Deliveries {
-							if job.MessageID == id && job.SenderUserID == u.ID {
+							if job.NotificationID == id && job.SenderUserID == u.ID {
 								job.SentDeleted = true
 							}
 						}
 					}
-					d.Messages[u.ID] = append(d.Messages[u.ID][:i], d.Messages[u.ID][i+1:]...)
+					d.Notifications[u.ID] = append(d.Notifications[u.ID][:i], d.Notifications[u.ID][i+1:]...)
 					return nil
 				}
 			}
 			return errors.New("not found")
 		})
 		if err != nil {
-			failure(w, 404, "Nachricht nicht gefunden")
+			failure(w, 404, "Mitteilung nicht gefunden")
 			return
 		}
 		reply(w, 200, map[string]bool{"ok": true})
 	}))
 	mux.HandleFunc("PUT /api/me/topics/{topic}", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) { a.updateTopic(w, r, u, true) }))
 	mux.HandleFunc("DELETE /api/me/topics/{topic}", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) { a.updateTopic(w, r, u, false) }))
+	mux.HandleFunc("PUT /api/me/topics/{topic}/mute", a.requireUser(a.updateTopicMute))
 	mux.HandleFunc("POST /api/me/devices", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
 		if !a.rateLimit(w, r) {
 			return
@@ -437,6 +452,7 @@ func (a *application) updateTopic(w http.ResponseWriter, r *http.Request, u *use
 				sort.Strings(account.Topics)
 			}
 		} else {
+			delete(account.TopicMutes, name)
 			var next []string
 			for _, x := range account.Topics {
 				if x != name {
@@ -466,7 +482,7 @@ func validSubscription(s webpush.Subscription) bool {
 }
 func (a *application) adminRoutes(mux *http.ServeMux) {
 	a.integrationKeyRoutes(mux)
-	a.messageLogRoutes(mux)
+	a.notificationLogRoutes(mux)
 	mux.HandleFunc("GET /api/admin/deliveries/{id}", a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
 		if !u.isAdmin() {
 			failure(w, 403, "Nur für Administratoren")
@@ -537,6 +553,7 @@ func (a *application) adminRoutes(mux *http.ServeMux) {
 			}
 			delete(d.Topics, name)
 			for _, account := range d.Users {
+				delete(account.TopicMutes, name)
 				next := make([]string, 0, len(account.Topics))
 				for _, subscribed := range account.Topics {
 					if subscribed != name {
@@ -619,7 +636,7 @@ func (a *application) adminRoutes(mux *http.ServeMux) {
 				return errors.New("unknown user")
 			}
 			delete(d.Users, id)
-			delete(d.Messages, id)
+			delete(d.Notifications, id)
 			for key, dev := range d.Devices {
 				if dev.UserID == id {
 					delete(d.Devices, key)
@@ -777,19 +794,19 @@ func (a *application) createTopic(w http.ResponseWriter, r *http.Request) {
 }
 
 // Mark every reconstruction source while preserving inboxes and delivery jobs.
-func hideSentMessages(db *database, sender, id string) int {
+func hideSentNotifications(db *database, sender, id string) int {
 	ids := map[string]bool{}
-	for uid, list := range db.Messages {
+	for uid, list := range db.Notifications {
 		for i, m := range list {
 			if m.SenderUserID == sender && (id == "" || m.ID == id) && !m.SentDeleted {
 				ids[m.ID] = true
-				db.Messages[uid][i].SentDeleted = true
+				db.Notifications[uid][i].SentDeleted = true
 			}
 		}
 	}
 	for _, job := range db.Deliveries {
-		if job.SenderUserID == sender && (id == "" || job.MessageID == id) && !job.SentDeleted {
-			ids[job.MessageID] = true
+		if job.SenderUserID == sender && (id == "" || job.NotificationID == id) && !job.SentDeleted {
+			ids[job.NotificationID] = true
 			job.SentDeleted = true
 		}
 	}

@@ -47,7 +47,7 @@ func TestDeviceTopicsRouteOnlyTopicPushes(t *testing.T) {
 			}
 			if tc.name == "backup" || tc.name == "system" {
 				for _, job := range a.db.snapshot().Deliveries {
-					if job.MessageID == result.MessageID && job.DeviceID != "all" && job.DeviceID != tc.name {
+					if job.NotificationID == result.NotificationID && job.DeviceID != "all" && job.DeviceID != tc.name {
 						t.Fatalf("topic sent to excluded device: %+v", job)
 					}
 				}
@@ -169,24 +169,24 @@ func TestMarkAllReadRespectsTopicFilter(t *testing.T) {
 			addTestUser(t, a, "alice", "", nil)
 			addTestUser(t, a, "other", "", nil)
 			if err := a.db.update(func(db *database) error {
-				db.Messages["alice"] = []inboxMessage{{ID: "backup", Topic: "backup"}, {ID: "system", Topic: "system"}, {ID: "direct"}}
-				db.Messages["other"] = []inboxMessage{{ID: "private", Topic: "backup"}}
+				db.Notifications["alice"] = []inboxNotification{{ID: "backup", Topic: "backup"}, {ID: "system", Topic: "system"}, {ID: "direct"}}
+				db.Notifications["other"] = []inboxNotification{{ID: "private", Topic: "backup"}}
 				return nil
 			}); err != nil {
 				t.Fatal(err)
 			}
-			r := request(t, a.routes(), "POST", "/api/me/messages/read-all", tc.body, a.cfg.origin, "", signIn(t, a, "alice"))
+			r := request(t, a.routes(), "POST", "/api/me/notifications/read-all", tc.body, a.cfg.origin, "", signIn(t, a, "alice"))
 			if r.Code != 200 {
 				t.Fatalf("mark read: %d %s", r.Code, r.Body.String())
 			}
 			snap := a.db.snapshot()
-			for i, message := range snap.Messages["alice"] {
-				if (message.ReadAt != nil) != tc.want[i] {
-					t.Fatalf("wrong read state for %s", message.ID)
+			for i, notification := range snap.Notifications["alice"] {
+				if (notification.ReadAt != nil) != tc.want[i] {
+					t.Fatalf("wrong read state for %s", notification.ID)
 				}
 			}
-			if snap.Messages["other"][0].ReadAt != nil {
-				t.Fatal("marked another account's message read")
+			if snap.Notifications["other"][0].ReadAt != nil {
+				t.Fatal("marked another account's notification read")
 			}
 		})
 	}

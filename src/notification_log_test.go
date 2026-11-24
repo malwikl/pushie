@@ -6,21 +6,21 @@ import (
 	"testing"
 )
 
-func TestCentralMessageLogPersistenceFiltersAndAccess(t *testing.T) {
+func TestCentralNotificationLogPersistenceFiltersAndAccess(t *testing.T) {
 	a := testApp(t)
 	addTestUser(t, a, "alice", "admin", nil)
 	addTestUser(t, a, "bob", "", nil)
 	admin, ordinary := signIn(t, a, "alice"), signIn(t, a, "bob")
 	h := a.routes()
 	long := strings.Repeat("long text line\n", 2000) + "needle-in-long-text"
-	r := request(t, h, "POST", "/api/admin/send", map[string]string{"userId": "bob", "title": "Audit", "body": "Summary", "longText": long}, a.cfg.origin, "", admin)
+	r := request(t, h, "POST", "/api/admin/send", map[string]string{"userId": "bob", "title": "Audit", "body": long}, a.cfg.origin, "", admin)
 	if r.Code != 200 {
 		t.Fatalf("send: %d %s", r.Code, r.Body.String())
 	}
 	var sent sendResult
 	json.Unmarshal(r.Body.Bytes(), &sent)
 	for _, cookie := range []string{ordinary, ""} {
-		for _, path := range []string{"/api/admin/message-log", "/api/admin/message-log/" + sent.MessageID} {
+		for _, path := range []string{"/api/admin/notification-log", "/api/admin/notification-log/" + sent.NotificationID} {
 			r = request(t, h, "GET", path, nil, "", "", cookie)
 			if r.Code != 401 && r.Code != 403 {
 				t.Fatalf("access allowed: %d", r.Code)
@@ -34,7 +34,7 @@ func TestCentralMessageLogPersistenceFiltersAndAccess(t *testing.T) {
 		{"", 1}, {"?q=needle-in-long-text", 1}, {"?sender=alice&recipient=bob&status=no_devices", 1},
 		{"?sender=bob", 0}, {"?recipient=absent", 0}, {"?status=confirmed", 0}, {"?from=2000-01-01&to=2000-12-31", 0},
 	} {
-		r = request(t, h, "GET", "/api/admin/message-log"+tc.query, nil, "", "", admin)
+		r = request(t, h, "GET", "/api/admin/notification-log"+tc.query, nil, "", "", admin)
 		var response struct {
 			Total int `json:"total"`
 		}
@@ -45,7 +45,7 @@ func TestCentralMessageLogPersistenceFiltersAndAccess(t *testing.T) {
 			t.Fatal("list includes full long text")
 		}
 	}
-	if err := a.db.update(func(d *database) error { delete(d.Messages, "bob"); return nil }); err != nil {
+	if err := a.db.update(func(d *database) error { delete(d.Notifications, "bob"); return nil }); err != nil {
 		t.Fatal(err)
 	}
 	reopened, err := openStore(a.db.path)
@@ -54,8 +54,8 @@ func TestCentralMessageLogPersistenceFiltersAndAccess(t *testing.T) {
 	}
 	defer reopened.Close()
 	a.db = reopened
-	r = request(t, a.routes(), "GET", "/api/admin/message-log/"+sent.MessageID, nil, "", "", admin)
-	var record messageLogRecord
+	r = request(t, a.routes(), "GET", "/api/admin/notification-log/"+sent.NotificationID, nil, "", "", admin)
+	var record notificationLogRecord
 	if err := json.Unmarshal(r.Body.Bytes(), &record); err != nil {
 		t.Fatal(err)
 	}
@@ -68,14 +68,28 @@ func TestCentralLogMigrationAndDeliveryRetention(t *testing.T) {
 	a := testApp(t)
 	addTestUser(t, a, "bob", "", nil)
 	if err := a.db.update(func(d *database) error {
-		d.Messages["bob"] = []inboxMessage{{ID: "historic", Title: "Old", Body: "body", LongText: "preserved"}}
-		d.Deliveries["job"] = &delivery{ID: "job", MessageID: "historic", UserID: "bob", DeviceID: "phone", Status: "retry", ReceiptSecret: "private"}
+		d.Notifications["bob"] = []inboxNotification{{ID: "historic", Title: "Old", Body: "body", LongText: "preserved"}}
+		d.Deliveries["job"] = &delivery{ID: "job", NotificationID: "historic", UserID: "bob", DeviceID: "phone", Status: "retry", ReceiptSecret: "private"}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
 	// Simulate a version 1 installation with existing inbox rows.
-	if _, err := a.db.sqlDB.Exec("DROP TABLE message_log"); err != nil {
+	for _, statement := range []string{
+		`ALTER TABLE notifications RENAME TO messages`,
+		`DROP INDEX idx_notifications_user_created`,
+		`CREATE INDEX idx_messages_user_created ON messages(user_id,created_at DESC)`,
+		`ALTER TABLE deliveries RENAME COLUMN notification_id TO message_id`,
+		`DROP INDEX idx_deliveries_notification`,
+		`CREATE INDEX idx_deliveries_message ON deliveries(message_id,user_id)`,
+		`UPDATE deliveries SET payload=json_remove(json_set(CAST(payload AS TEXT),'$.messageId',json_extract(CAST(payload AS TEXT),'$.notificationId')),'$.notificationId')`,
+	} {
+		if _, err := a.db.sqlDB.Exec(statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := a.db.sqlDB.Exec("DROP TABLE notification_log"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := a.db.sqlDB.Exec("PRAGMA user_version = 1"); err != nil {
@@ -86,17 +100,17 @@ func TestCentralLogMigrationAndDeliveryRetention(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer migrated.Close()
-	record := migrated.snapshot().MessageLog["historic"]
+	record := migrated.snapshot().NotificationLog["historic"]
 	if record == nil || !record.Recovered || record.Notification.LongText != "preserved" || len(record.Deliveries) != 1 {
 		t.Fatal("migration did not recover history")
 	}
 	if err := migrated.update(func(d *database) error { d.Deliveries["job"].Status = "confirmed"; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if err := migrated.update(func(d *database) error { delete(d.Deliveries, "job"); delete(d.Messages, "bob"); return nil }); err != nil {
+	if err := migrated.update(func(d *database) error { delete(d.Deliveries, "job"); delete(d.Notifications, "bob"); return nil }); err != nil {
 		t.Fatal(err)
 	}
-	record = migrated.snapshot().MessageLog["historic"]
+	record = migrated.snapshot().NotificationLog["historic"]
 	if record.Deliveries[0].Status != "confirmed" {
 		t.Fatal("delivery history lost")
 	}
@@ -106,7 +120,7 @@ func TestCentralLogMigrationAndDeliveryRetention(t *testing.T) {
 	}
 }
 
-func TestMessageLogSettingsAndCleanup(t *testing.T) {
+func TestNotificationLogSettingsAndCleanup(t *testing.T) {
 	a := testApp(t)
 	addTestUser(t, a, "admin", "admin", nil)
 	addTestUser(t, a, "member", "", nil)
@@ -116,10 +130,10 @@ func TestMessageLogSettingsAndCleanup(t *testing.T) {
 		method, path string
 		body         any
 	}{
-		{"GET", "/api/admin/message-log/settings", nil},
-		{"PUT", "/api/admin/message-log/settings", map[string]bool{"enabled": false}},
-		{"POST", "/api/admin/message-log/cleanup-preview", map[string]int{"days": 0}},
-		{"POST", "/api/admin/message-log/cleanup", map[string]any{"days": 0, "confirm": "LÖSCHEN"}},
+		{"GET", "/api/admin/notification-log/settings", nil},
+		{"PUT", "/api/admin/notification-log/settings", map[string]bool{"enabled": false}},
+		{"POST", "/api/admin/notification-log/cleanup-preview", map[string]int{"days": 0}},
+		{"POST", "/api/admin/notification-log/cleanup", map[string]any{"days": 0, "confirm": "LÖSCHEN"}},
 	} {
 		if r := request(t, h, tc.method, tc.path, tc.body, a.cfg.origin, "", member); r.Code != 403 {
 			t.Fatalf("member access: %s %d", tc.path, r.Code)
@@ -138,11 +152,11 @@ func TestMessageLogSettingsAndCleanup(t *testing.T) {
 		}
 	}
 	send()
-	if r := request(t, h, "PUT", "/api/admin/message-log/settings", map[string]bool{"enabled": false}, a.cfg.origin, "", admin); r.Code != 200 {
+	if r := request(t, h, "PUT", "/api/admin/notification-log/settings", map[string]bool{"enabled": false}, a.cfg.origin, "", admin); r.Code != 200 {
 		t.Fatal(r.Body.String())
 	}
 	send()
-	if len(a.db.snapshot().MessageLog) != 1 || len(a.db.snapshot().Messages["member"]) != 2 {
+	if len(a.db.snapshot().NotificationLog) != 1 || len(a.db.snapshot().Notifications["member"]) != 2 {
 		t.Fatal("disabled log affected delivery or wrote log")
 	}
 	reopened, err := openStore(a.db.path)
@@ -150,30 +164,30 @@ func TestMessageLogSettingsAndCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reopened.Close()
-	if !reopened.snapshot().MessageLogDisabled {
+	if !reopened.snapshot().NotificationLogDisabled {
 		t.Fatal("setting not persisted")
 	}
-	if r := request(t, h, "POST", "/api/admin/message-log/cleanup-preview", map[string]int{"days": 0}, a.cfg.origin, "", admin); r.Code != 200 || !strings.Contains(r.Body.String(), `"entries":1`) {
+	if r := request(t, h, "POST", "/api/admin/notification-log/cleanup-preview", map[string]int{"days": 0}, a.cfg.origin, "", admin); r.Code != 200 || !strings.Contains(r.Body.String(), `"entries":1`) {
 		t.Fatal(r.Body.String())
 	}
-	if len(a.db.snapshot().MessageLog) != 1 {
+	if len(a.db.snapshot().NotificationLog) != 1 {
 		t.Fatal("preview deleted log")
 	}
 	for _, days := range []int{-1, 3651} {
-		if r := request(t, h, "POST", "/api/admin/message-log/cleanup", map[string]any{"days": days, "confirm": "LÖSCHEN"}, a.cfg.origin, "", admin); r.Code != 400 {
+		if r := request(t, h, "POST", "/api/admin/notification-log/cleanup", map[string]any{"days": days, "confirm": "LÖSCHEN"}, a.cfg.origin, "", admin); r.Code != 400 {
 			t.Fatal("invalid days accepted")
 		}
 	}
-	if r := request(t, h, "POST", "/api/admin/message-log/cleanup", map[string]int{"days": 0}, a.cfg.origin, "", admin); r.Code != 400 {
+	if r := request(t, h, "POST", "/api/admin/notification-log/cleanup", map[string]int{"days": 0}, a.cfg.origin, "", admin); r.Code != 400 {
 		t.Fatal("missing confirmation accepted")
 	}
-	if r := request(t, h, "POST", "/api/admin/message-log/cleanup", map[string]any{"days": 0, "confirm": "LÖSCHEN"}, a.cfg.origin, "", admin); r.Code != 200 {
+	if r := request(t, h, "POST", "/api/admin/notification-log/cleanup", map[string]any{"days": 0, "confirm": "LÖSCHEN"}, a.cfg.origin, "", admin); r.Code != 200 {
 		t.Fatal(r.Body.String())
 	}
-	if len(a.db.snapshot().MessageLog) != 0 || len(a.db.snapshot().Messages["member"]) != 2 {
+	if len(a.db.snapshot().NotificationLog) != 0 || len(a.db.snapshot().Notifications["member"]) != 2 {
 		t.Fatal("cleanup affected inbox or kept log")
 	}
-	if r := request(t, h, "PUT", "/api/admin/message-log/settings", map[string]bool{"enabled": true}, a.cfg.origin, "", admin); r.Code != 200 {
+	if r := request(t, h, "PUT", "/api/admin/notification-log/settings", map[string]bool{"enabled": true}, a.cfg.origin, "", admin); r.Code != 200 {
 		t.Fatal(r.Body.String())
 	}
 	send()
@@ -182,7 +196,7 @@ func TestMessageLogSettingsAndCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reopened2.Close()
-	if len(reopened2.snapshot().MessageLog) != 1 || reopened2.snapshot().MessageLogDisabled {
+	if len(reopened2.snapshot().NotificationLog) != 1 || reopened2.snapshot().NotificationLogDisabled {
 		t.Fatal("deleted logs restored or logging not reenabled")
 	}
 }

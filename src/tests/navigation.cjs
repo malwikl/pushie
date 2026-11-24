@@ -6,9 +6,9 @@ const fs=require('node:fs');
 const source=fs.readFileSync(require('node:path').join(__dirname,'../static/app.js'),'utf8');
 function inboxNavigationFixture(){
  const fields={inboxHome:{},appHeader:{addEventListener(type,fn){this[type]=fn}},serverHostname:{}};
- const url=new URL('https://pushie.example.test:8443/?lang=de&message=old#devicesView');let active='sent',views=0,refreshes=0;
- const context=vm.createContext({$:id=>fields[id],URL,location:url,history:{replaceState(_,__,value){url.href=value}},window:{scrollTo(){}},me:{id:'user'},receivedMessageList:{filter:'topic:backup'},
-  resetViews:()=>{views++},closeHeaderMenu(){},setMessageTab:tab=>{active=tab},renderInbox(){},refreshInbox:async()=>{refreshes++},status(){}});
+ const url=new URL('https://pushie.example.test:8443/?lang=de&notification=old#devicesView');let active='sent',views=0,refreshes=0;
+ const context=vm.createContext({$:id=>fields[id],URL,location:url,history:{replaceState(_,__,value){url.href=value}},window:{scrollTo(){}},me:{id:'user'},receivedNotificationList:{filter:'topic:backup'},
+  resetViews:()=>{views++},closeHeaderMenu(){},setNotificationTab:tab=>{active=tab},renderInbox(){},refreshInbox:async()=>{refreshes++},status(){}});
  vm.runInContext(source.slice(source.indexOf('function setupInboxNavigation()')),context);context.setupInboxNavigation();
  return {fields,context,url,active:()=>active,views:()=>views,refreshes:()=>refreshes};
 }
@@ -16,7 +16,7 @@ test('brand links to the received inbox, resets the filter and preserves languag
  const f=inboxNavigationFixture();let prevented=false;
  assert.equal(f.fields.serverHostname.textContent,'pushie.example.test');
  f.fields.inboxHome.onclick({preventDefault(){prevented=true}});
- assert.equal(prevented,true);assert.equal(f.active(),'received');assert.equal(f.context.receivedMessageList.filter,'');assert.equal(f.url.hash,'#inboxPanel');assert.equal(f.url.searchParams.get('lang'),'de');assert.equal(f.url.searchParams.has('message'),false);assert.equal(f.refreshes(),1);
+ assert.equal(prevented,true);assert.equal(f.active(),'received');assert.equal(f.context.receivedNotificationList.filter,'');assert.equal(f.url.hash,'#inboxPanel');assert.equal(f.url.searchParams.get('lang'),'de');assert.equal(f.url.searchParams.has('notification'),false);assert.equal(f.refreshes(),1);
 });
 test('empty header area opens inbox; theme/menu controls and signed-out clicks do not navigate',()=>{
  const f=inboxNavigationFixture();
@@ -38,7 +38,7 @@ function fixture(role){
  const account=node('account');account.append(node('profile'),node('inboxPanel'),node('devicesPanel'),node('settingsPanel'));
  const admin=node('adminPanel');account.append(admin);
  admin.append(node('heading'),node('sendHeading'),node('sendForm'),node('inviteSection'),node('adminUsers'),node('topicSection'),node('topicForm'),node('storageSection'),node('storageStats'));
- for(const id of ['sendResult','refreshDeliveryStatus','openSend','messagesShortcut','devicesShortcut','topicsShortcut','accountShortcut','adminShortcut'])node(id);
+ for(const id of ['sendResult','refreshDeliveryStatus','openSend','notificationsShortcut','devicesShortcut','topicsShortcut','accountShortcut','adminShortcut'])node(id);
  const context=vm.createContext({document:{createElement:()=>node()},$:id=>elements.get(id),me:{role},t:x=>x,window:{addEventListener(){}},location:{hash:''},closeHeaderMenu(){},renderTargetDevices(){},refreshAdminTargets:async()=>{},createCentralLog:()=>node(),refreshCentralLog:async()=>{},status(){}});
  vm.runInContext(source.slice(source.indexOf('let viewsReady='),source.indexOf('function closeHeaderMenu')),context);
  vm.runInContext('setupViews()',context);
@@ -46,10 +46,10 @@ function fixture(role){
 }
 test('one menu switches views; subscriptions and creation share the topic view',()=>{
  const {account,context,$}=fixture('admin');
- assert.equal($('messagesView').hidden,false);
+ assert.equal($('notificationsView').hidden,false);
  assert.equal($('accountView').hidden,true);
  $('devicesShortcut').onclick();assert.equal($('devicesView').hidden,false);assert.equal($('devicesPanel').parent,$('devicesView'));assert.equal($('accountView').children.length,2);
- $('topicsShortcut').onclick();assert.equal($('topicsView').hidden,false);assert.equal($('messagesView').hidden,true);
+ $('topicsShortcut').onclick();assert.equal($('topicsView').hidden,false);assert.equal($('notificationsView').hidden,true);
  assert.equal($('topics').parent,$('topicCreate').parent);
  assert.equal($('topicCreate').children[0].id,'topicSection');
  $('adminShortcut').onclick();assert.equal($('administrationView').hidden,false);
@@ -57,12 +57,12 @@ test('one menu switches views; subscriptions and creation share the topic view',
  assert.equal($('storageSection').parent.parent,$('administrationView'));
  assert.equal($('sendDialog').children[1].id,'sendForm');
  $('openSend').onclick();assert.equal($('sendDialog').open,true);
- vm.runInContext("me.role='';setupViews()",context);assert.equal($('administrationView').hidden,true);assert.equal($('messagesView').hidden,false);
+ vm.runInContext("me.role='';setupViews()",context);assert.equal($('administrationView').hidden,true);assert.equal($('notificationsView').hidden,false);
  assert.equal(account.children.some(el=>el.attributes.role==='tablist'),false);
 });
 test('ordinary accounts cannot open admin view or compose dialog',()=>{
  const {$}=fixture('');
- $('adminShortcut').onclick();assert.equal($('administrationView').hidden,true);assert.equal($('messagesView').hidden,false);
+ $('adminShortcut').onclick();assert.equal($('administrationView').hidden,true);assert.equal($('notificationsView').hidden,false);
  $('openSend').onclick();assert.equal($('sendDialog').open,false);
  $('topicsShortcut').onclick();assert.equal($('topicsView').hidden,false);
 });

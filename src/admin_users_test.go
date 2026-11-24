@@ -36,8 +36,8 @@ func TestWebUserManagement(t *testing.T) {
 	if err := a.db.update(func(d *database) error {
 		d.Devices["member-device"] = &device{ID: "member-device", UserID: "member"}
 		d.Devices["owner-device"] = &device{ID: "owner-device", UserID: "owner"}
-		d.Messages["member"] = []inboxMessage{{ID: "member-message"}}
-		d.Messages["owner"] = []inboxMessage{{ID: "owner-message"}}
+		d.Notifications["member"] = []inboxNotification{{ID: "member-notification"}}
+		d.Notifications["owner"] = []inboxNotification{{ID: "owner-notification"}}
 		d.Deliveries["member-job"] = &delivery{ID: "member-job", UserID: "member", DeviceID: "member-device"}
 		d.Deliveries["owner-job"] = &delivery{ID: "owner-job", UserID: "owner", DeviceID: "owner-device"}
 		return nil
@@ -48,10 +48,10 @@ func TestWebUserManagement(t *testing.T) {
 		t.Fatalf("delete: %d %s", r.Code, r.Body.String())
 	}
 	snap := a.db.snapshot()
-	if snap.Users["member"] != nil || snap.Devices["member-device"] != nil || len(snap.Messages["member"]) != 0 || snap.Deliveries["member-job"] != nil {
+	if snap.Users["member"] != nil || snap.Devices["member-device"] != nil || len(snap.Notifications["member"]) != 0 || snap.Deliveries["member-job"] != nil {
 		t.Fatal("deleted account data retained")
 	}
-	if snap.Users["owner"] == nil || snap.Devices["owner-device"] == nil || len(snap.Messages["owner"]) != 1 || snap.Deliveries["owner-job"] == nil {
+	if snap.Users["owner"] == nil || snap.Devices["owner-device"] == nil || len(snap.Notifications["owner"]) != 1 || snap.Deliveries["owner-job"] == nil {
 		t.Fatal("other account modified")
 	}
 	if r := request(t, h, "GET", "/api/me", nil, "", "", member); r.Code != 401 {

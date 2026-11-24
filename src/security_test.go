@@ -166,9 +166,9 @@ func TestQueueQuotaRejectsAtomically(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	before := len(a.db.snapshot().Messages["alex"])
+	before := len(a.db.snapshot().Notifications["alex"])
 	r := request(t, a.routes(), "POST", "/api/send", map[string]any{"userId": "alex", "body": "overflow"}, "", a.cfg.sendToken, "")
-	if r.Code != 429 || len(a.db.snapshot().Messages["alex"]) != before {
+	if r.Code != 429 || len(a.db.snapshot().Notifications["alex"]) != before {
 		t.Fatalf("queue rejection not atomic: %d", r.Code)
 	}
 }
@@ -238,9 +238,9 @@ func TestGlobalQueueQuota(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	before := len(a.db.snapshot().Messages["alex"])
+	before := len(a.db.snapshot().Notifications["alex"])
 	r := request(t, a.routes(), "POST", "/api/send", map[string]any{"userId": "alex", "body": "overflow"}, "", a.cfg.sendToken, "")
-	if r.Code != 429 || len(a.db.snapshot().Messages["alex"]) != before {
+	if r.Code != 429 || len(a.db.snapshot().Notifications["alex"]) != before {
 		t.Fatalf("global queue quota not atomic: %d", r.Code)
 	}
 }
@@ -262,13 +262,13 @@ func TestUserSnapshotsExcludeOtherAccountsAndSecrets(t *testing.T) {
 	_, _ = seedAndQueue(t, a)
 	addTestUser(t, a, "bob", "", nil)
 	if err := a.db.update(func(db *database) error {
-		db.Messages["bob"] = []inboxMessage{{ID: "private", Body: "private"}}
+		db.Notifications["bob"] = []inboxNotification{{ID: "private", Body: "private"}}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
 	inbox := a.db.userSnapshot("alex", true)
-	if len(inbox.Users) != 0 || len(inbox.Devices) != 0 || len(inbox.Messages["bob"]) != 0 {
+	if len(inbox.Users) != 0 || len(inbox.Devices) != 0 || len(inbox.Notifications["bob"]) != 0 {
 		t.Fatal("unrelated account data exposed in user snapshot")
 	}
 	for _, d := range inbox.Deliveries {
@@ -289,7 +289,7 @@ func TestAuthenticatedReadTrafficDoesNotExhaustWrites(t *testing.T) {
 	addTestUser(t, a, "alice", "", nil)
 	cookie := signIn(t, a, "alice")
 	for i := 0; i < 130; i++ {
-		r := httptest.NewRequest("GET", "/api/me/messages", nil)
+		r := httptest.NewRequest("GET", "/api/me/notifications", nil)
 		r.Header.Set("Cookie", cookie)
 		if !a.rateLimit(httptest.NewRecorder(), r) {
 			t.Fatalf("read %d was blocked", i)

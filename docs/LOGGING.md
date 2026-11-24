@@ -19,14 +19,14 @@ docker logs --since 1h pushie 2>&1 | grep '"result":"rate_limited"'
 | `push.provider_response` | Provider HTTP status and retry delay |
 
 Use `X-Request-ID` to correlate an API response with logs. Delivery events
-include message, user, and device IDs. `client_id`, `page_id`, and
+include notification, user, and device IDs. `client_id`, `page_id`, and
 `push_device_id` identify browser installations, tabs, and registered devices;
 these are diagnostic labels, not verified identities.
 
 Technical request logs omit authorization headers, cookies, raw query strings,
-message bodies, and push endpoints. They retain client IPs, user/device IDs,
+notification bodies, and push endpoints. They retain client IPs, user/device IDs,
 and a bounded User-Agent value. Initial setup output includes newly generated
-credentials. The admin message log separately stores message content.
+credentials. The admin notification log separately stores notification content.
 
 ## Common checks
 

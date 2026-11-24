@@ -14,7 +14,7 @@ import (
 	"unicode/utf8"
 )
 
-const maxInboxMessages = 200
+const maxInboxNotifications = 200
 const maxDevicesPerUser = 20
 const maxPendingDeliveries = 10000
 const maxPendingPerUser = 1000
@@ -42,14 +42,14 @@ type sendRequest struct {
 type sendResult struct {
 	// Legacy fields remain for backwards-compatible CLI consumers. With the
 	// durable queue, "accepted" is initially zero, not a delivery guarantee.
-	Accepted   int    `json:"accepted"`
-	Failed     int    `json:"failed"`
-	Expired    int    `json:"expired"`
-	Recipients int    `json:"recipients"`
-	Queued     int    `json:"queued"`
-	InboxUsers int    `json:"inboxUsers"`
-	MessageID  string `json:"messageId"`
-	StatusURL  string `json:"statusUrl"`
+	Accepted       int    `json:"accepted"`
+	Failed         int    `json:"failed"`
+	Expired        int    `json:"expired"`
+	Recipients     int    `json:"recipients"`
+	Queued         int    `json:"queued"`
+	InboxUsers     int    `json:"inboxUsers"`
+	NotificationID string `json:"notificationId"`
+	StatusURL      string `json:"statusUrl"`
 }
 
 func (a *application) sendHandler(w http.ResponseWriter, r *http.Request) {
@@ -67,11 +67,24 @@ func (a *application) sendHandler(w http.ResponseWriter, r *http.Request) {
 // All targets are resolved AT ACCEPTANCE TIME, ensuring that retries send
 // only to the original subscribed users and devices, never new subscribers.
 func (a *application) dispatchFromBody(w http.ResponseWriter, r *http.Request) {
-	var req sendRequest
-	if !decode(w, r, &req) {
+	// Keep stored notification fields (longText and id) out of the request schema.
+	var payload struct {
+		Title     string   `json:"title"`
+		Body      string   `json:"body"`
+		Tag       string   `json:"tag,omitempty"`
+		Topic     string   `json:"topic,omitempty"`
+		DeviceIDs []string `json:"deviceIds,omitempty"`
+		Broadcast bool     `json:"broadcast,omitempty"`
+		UserID    string   `json:"userId,omitempty"`
+		DeviceID  string   `json:"deviceId,omitempty"`
+	}
+	if !decode(w, r, &payload) {
 		return
 	}
-	a.dispatchNotification(w, r, req)
+	a.dispatchNotification(w, r, sendRequest{
+		notification: notification{Title: payload.Title, Body: payload.Body, Tag: payload.Tag, Topic: payload.Topic},
+		DeviceIDs:    payload.DeviceIDs, Broadcast: payload.Broadcast, UserID: payload.UserID, DeviceID: payload.DeviceID,
+	})
 }
 
 func (a *application) dispatchNotification(w http.ResponseWriter, r *http.Request, req sendRequest) {
@@ -93,8 +106,8 @@ func (a *application) dispatchNotification(w http.ResponseWriter, r *http.Reques
 	if req.Title == "" {
 		req.Title = "Push"
 	}
-	if strings.TrimSpace(req.Body) == "" || len(req.Body) > 2000 || len(req.Title) > 160 || len(req.Tag) > 100 || len(req.LongText) > 256*1024 || !utf8.ValidString(req.LongText) {
-		failure(w, 400, "Nachricht ungültig oder zu lang")
+	if strings.TrimSpace(req.Body) == "" || len(req.Body) > 256*1024 || len(req.Title) > 160 || len(req.Tag) > 100 || len(req.LongText) > 256*1024 || !utf8.ValidString(req.Body) || !utf8.ValidString(req.LongText) {
+		failure(w, 400, "Mitteilung ungültig oder zu lang")
 		return
 	}
 	if req.ID != "" {
@@ -142,6 +155,16 @@ func (a *application) dispatchNotification(w http.ResponseWriter, r *http.Reques
 	if personal {
 		keyHash = invitationHash("personal:" + p.UserID + ":" + key)
 	}
+	// Hash the full input above so retries compare the complete notification.
+	// LongText is storage-only; every sender uses body for the full notification.
+	if len(req.Body) > 2000 {
+		req.LongText = req.Body
+		preview := req.Body[:1800]
+		for !utf8.ValidString(preview) {
+			preview = preview[:len(preview)-1]
+		}
+		req.Body = preview + "\n… (vollständige Mitteilung im Posteingang)"
+	}
 	req.notification.ID = id
 	pushContent := req.notification
 	pushContent.LongText = "" // full text is stored in SQLite, not sent through APNs/FCM
@@ -151,10 +174,10 @@ func (a *application) dispatchNotification(w http.ResponseWriter, r *http.Reques
 		failure(w, 413, "Push-Nutzdaten zu groß")
 		return
 	}
-	now := time.Now().UTC()
-	result := sendResult{MessageID: id, StatusURL: "/api/send/status/" + id}
+	result := sendResult{NotificationID: id, StatusURL: "/api/send/status/" + id}
 	replayed := false
 	err = a.db.update(func(db *database) error {
+		now := time.Now().UTC()
 		if hash, ok := r.Context().Value(integrationSenderContext{}).(string); ok && !integrationKeyValid(db.IntegrationKeys, hash) {
 			return errors.New("key revoked")
 		}
@@ -204,6 +227,9 @@ func (a *application) dispatchNotification(w http.ResponseWriter, r *http.Reques
 			for _, u := range db.Users {
 				if hasString(u.Topics, req.Topic) {
 					targets[u.ID] = true
+					if until, exists := u.TopicMutes[req.Topic]; exists && !until.After(now) {
+						delete(u.TopicMutes, req.Topic)
+					}
 				}
 			}
 		} else if req.UserID != "" {
@@ -218,8 +244,9 @@ func (a *application) dispatchNotification(w http.ResponseWriter, r *http.Reques
 				pendingByUser[job.UserID]++
 			}
 		}
+		pushDevices := make([]*device, 0)
 		for _, dev := range db.Devices {
-			if (req.DeviceIDs != nil && !selected[dev.ID]) || !targets[dev.UserID] || (req.DeviceID != "" && req.DeviceID != dev.ID) || !dev.receivesTopic(req.Topic) {
+			if (req.DeviceIDs != nil && !selected[dev.ID]) || !targets[dev.UserID] || (req.DeviceID != "" && req.DeviceID != dev.ID) || !dev.receivesTopic(req.Topic) || db.Users[dev.UserID].topicMuted(req.Topic, now) {
 				continue
 			}
 			pending++
@@ -227,31 +254,29 @@ func (a *application) dispatchNotification(w http.ResponseWriter, r *http.Reques
 			if pending > maxPendingDeliveries || pendingByUser[dev.UserID] > maxPendingPerUser {
 				return errors.New("queue full")
 			}
+			pushDevices = append(pushDevices, dev)
 		}
 		for userID := range targets {
-			message := inboxMessage{ID: id, Title: req.Title, Body: req.Body, Topic: req.Topic, Tag: req.Tag, LongText: req.LongText, CreatedAt: now}
+			notification := inboxNotification{ID: id, Title: req.Title, Body: req.Body, Topic: req.Topic, Tag: req.Tag, LongText: req.LongText, CreatedAt: now}
 			if req.Broadcast {
-				message.DeliveryReason = "broadcast"
+				notification.DeliveryReason = "broadcast"
 			}
-			message.SenderUserID = senderID
-			list := append(db.Messages[userID], message)
-			if len(list) > maxInboxMessages {
-				list = list[len(list)-maxInboxMessages:]
+			notification.SenderUserID = senderID
+			list := append(db.Notifications[userID], notification)
+			if len(list) > maxInboxNotifications {
+				list = list[len(list)-maxInboxNotifications:]
 			}
-			db.Messages[userID] = list
+			db.Notifications[userID] = list
 			result.InboxUsers++
 		}
-		for _, dev := range db.Devices {
-			if (req.DeviceIDs != nil && !selected[dev.ID]) || !targets[dev.UserID] || (req.DeviceID != "" && req.DeviceID != dev.ID) || !dev.receivesTopic(req.Topic) {
-				continue
-			}
+		for _, dev := range pushDevices {
 			jobID, e1 := secret()
 			receipt, e2 := secret()
 			if e1 != nil || e2 != nil {
 				return errors.New("random source")
 			}
 			db.Deliveries[jobID] = &delivery{
-				ID: jobID, MessageID: id, UserID: dev.UserID, DeviceID: dev.ID, DeviceName: dev.Name,
+				ID: jobID, NotificationID: id, UserID: dev.UserID, DeviceID: dev.ID, DeviceName: dev.Name,
 				Content: pushContent, ReceiptSecret: receipt, Status: "pending", NextAttemptAt: now,
 				CreatedAt: now, ExpiresAt: now.Add(deliveryLifetime),
 			}
@@ -262,8 +287,8 @@ func (a *application) dispatchNotification(w http.ResponseWriter, r *http.Reques
 			result.Recipients++
 			result.Queued++
 		}
-		if !db.MessageLogDisabled {
-			record := &messageLogRecord{Notification: req.notification, CreatedAt: now, Sender: logParty{ID: senderID, Name: "Server API"}, Source: "server_token", Target: logTarget{Topic: req.Topic, UserID: req.UserID, DeviceID: req.DeviceID, Broadcast: req.Broadcast, DeviceIDs: req.DeviceIDs}}
+		if !db.NotificationLogDisabled {
+			record := &notificationLogRecord{Notification: req.notification, CreatedAt: now, Sender: logParty{ID: senderID, Name: "Server API"}, Source: "server_token", Target: logTarget{Topic: req.Topic, UserID: req.UserID, DeviceID: req.DeviceID, Broadcast: req.Broadcast, DeviceIDs: req.DeviceIDs}}
 			if u := db.Users[senderID]; u != nil {
 				record.Sender.Name = u.Name
 				record.Source = "web"
@@ -285,11 +310,11 @@ func (a *application) dispatchNotification(w http.ResponseWriter, r *http.Reques
 			}
 			sort.Slice(record.Recipients, func(i, j int) bool { return record.Recipients[i].ID < record.Recipients[j].ID })
 			record.Deliveries = deliveryViews(*db, id, "")
-			db.MessageLog[id] = record
+			db.NotificationLog[id] = record
 		}
 		// Bounded cleanup of COMPLETED jobs only; keep pending jobs across restarts.
 		for jobID, job := range db.Deliveries {
-			if (job.Status == "accepted" || job.Status == "confirmed" || job.Status == "failed" || job.Status == "unconfirmed") && job.CreatedAt.Before(now.Add(-30*24*time.Hour)) {
+			if terminalDelivery(job.Status) && job.CreatedAt.Before(now.Add(-30*24*time.Hour)) {
 				delete(db.Deliveries, jobID)
 			}
 		}
@@ -310,12 +335,12 @@ func (a *application) dispatchNotification(w http.ResponseWriter, r *http.Reques
 			w.Header().Set("Retry-After", "60")
 			failure(w, 429, "Zustellwarteschlange voll")
 		} else if err.Error() == "idempotency conflict" {
-			failure(w, 409, "Idempotency-Key bereits für andere Nachricht verwendet")
+			failure(w, 409, "Idempotency-Key bereits für andere Mitteilung verwendet")
 		} else if err.Error() == "target missing" {
 			failure(w, 404, "Ziel nicht gefunden")
 		} else {
 			log.Printf("persist push queue: %v", err)
-			failure(w, 500, "Nachricht konnte nicht gespeichert werden")
+			failure(w, 500, "Mitteilung konnte nicht gespeichert werden")
 		}
 		return
 	}

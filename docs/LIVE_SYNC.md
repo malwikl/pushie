@@ -1,6 +1,6 @@
 # Live device sync
 
-Signed-in pages use `/api/me/sync` over WebSocket to refresh messages, read
+Signed-in pages use `/api/me/sync` over WebSocket to refresh notifications, read
 state, devices, delivery status, and settings. Changes are account-scoped;
 topic changes refresh the shared topic list. Background notifications use
 Web Push.
@@ -18,6 +18,6 @@ connections per account.
 
 ## Verify
 
-Sign in on two devices. Send, read, and delete a message on one; verify the
+Sign in on two devices. Send, read, and delete a notification on one; verify the
 other updates without reloading. Background and reopen the app, then check
 that it catches up. The proxy should return HTTP 101 for `/api/me/sync`.

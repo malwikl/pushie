@@ -18,7 +18,7 @@
     let profile=null,shownFor=null,step=1,installPrompt=null,busy=false,lastSuggested='',suggestionStarted=false;
     const installed=()=>!!navigator.standalone||!!window.matchMedia?.('(display-mode: standalone)').matches;
     const info=()=>deviceInfo(navigator,installed());
-    function feedback(message,error=false){$('onboardingStatus').textContent=message;$('onboardingStatus').className=error?'error':'hint'}
+    function feedback(notification,error=false){$('onboardingStatus').textContent=notification;$('onboardingStatus').className=error?'error':'hint'}
     function suggest(model=''){
       const value=suggestedName(info(),t,model);
       for(const id of ['deviceName','onboardingDeviceName']){
@@ -36,7 +36,7 @@
         intro='Pushie ist bereits als App geöffnet. Du kannst jetzt Push für dieses Gerät aktivieren.';
       }else if(device.kind==='android'){
         intro='Auf Android funktioniert Push in unterstützten Browsern auch ohne Installation. Ein Home-Bildschirm-Symbol ist optional.';
-        steps=['Öffne das Browser-Menü und wähle App installieren oder Zum Startbildschirm hinzufügen, falls angeboten.','Du kannst auch direkt fortfahren und Benachrichtigungen für diese Website erlauben.'];
+        steps=['Öffne das Browser-Menü und wähle App installieren oder Zum Startbildschirm hinzufügen, falls angeboten.','Du kannst auch direkt fortfahren und Mitteilungen für diese Website erlauben.'];
       }else{
         intro='Auf Mac und Windows ist keine Installation für Push erforderlich. Verwende einen Browser mit Web-Push-Unterstützung.';
         steps=device.kind==='mac'&&device.browser==='Safari'?['Optional: Wähle in Safari Ablage → Zum Dock hinzufügen, falls verfügbar.']:['Optional: Verwende das Installieren-Symbol oder App installieren im Browser-Menü, falls angeboten.'];
@@ -55,7 +55,7 @@
       $('onboardingRegister').disabled=busy||!ready||info().requiresInstall;
       $('onboardingLater').disabled=busy;$('onboardingBack').disabled=busy;
       if(step===2&&!busy){
-        if(window.Notification?.permission==='denied')feedback(t('Benachrichtigungen sind blockiert. Erlaube sie in den Website- oder Systemeinstellungen und versuche es erneut.'));
+        if(window.Notification?.permission==='denied')feedback(t('Mitteilungen sind blockiert. Erlaube sie in den Website- oder Systemeinstellungen und versuche es erneut.'));
         else if(!ready)feedback(t('Push ist noch nicht bereit oder wird in diesem Browser nicht unterstützt. Du kannst den Posteingang trotzdem verwenden.'));
         else if($('onboardingStatus').textContent===t('Push ist noch nicht bereit oder wird in diesem Browser nicht unterstützt. Du kannst den Posteingang trotzdem verwenden.'))feedback('');
       }
@@ -75,7 +75,6 @@
       else suggest();
       renderStep();if(!dialog.open)dialog.showModal();
     }
-    $('setupDevice').onclick=open;
     $('restartOnboarding').onclick=open;
     $('onboardingNext').onclick=()=>{step=2;feedback('');renderStep();$('onboardingDeviceName').focus()};
     $('onboardingBack').onclick=()=>{step=1;feedback('');renderStep()};
@@ -92,7 +91,7 @@
         // Invoke registration before awaiting anything else, preserving the permission gesture.
         await register(name);await finish();
       }catch(error){
-        feedback(error.name==='NotAllowedError'?t('Benachrichtigungen sind blockiert. Erlaube sie in den Website- oder Systemeinstellungen und versuche es erneut.'):error.message,true);
+        feedback(error.name==='NotAllowedError'?t('Mitteilungen sind blockiert. Erlaube sie in den Website- oder Systemeinstellungen und versuche es erneut.'):error.message,true);
       }finally{busy=false;renderStep()}
     };
     $('onboardingInstall').onclick=async()=>{

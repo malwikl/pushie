@@ -54,7 +54,7 @@ func syncState(d database, id string) any {
 			deliveries[k] = v
 		}
 	}
-	return []any{d.Users[id], d.Messages[id], devices, deliveries, d.Topics}
+	return []any{d.Users[id], d.Notifications[id], devices, deliveries, d.Topics}
 }
 
 // Called under the store lock only after a successful commit.
@@ -66,7 +66,7 @@ func (s *store) notifyChanges(before, after database) {
 			if old != nil {
 				previous = old.Status
 			}
-			slog.Info("push.state", "delivery_id", id, "message_id", d.MessageID, "device_id", d.DeviceID, "user_id", d.UserID, "from", previous, "to", d.Status, "attempts", d.Attempts, "next_attempt_at", d.NextAttemptAt)
+			slog.Info("push.state", "delivery_id", id, "notification_id", d.NotificationID, "device_id", d.DeviceID, "user_id", d.UserID, "from", previous, "to", d.Status, "attempts", d.Attempts, "next_attempt_at", d.NextAttemptAt)
 		}
 	}
 

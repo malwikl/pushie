@@ -28,7 +28,7 @@ func testApp(t *testing.T) *application {
 	}
 	return &application{db: db, wa: wa, auth: newAuthState(), cfg: config{origin: "http://localhost:8099", rpID: "localhost", adminToken: strings.Repeat("a", 64), sendToken: strings.Repeat("b", 64), publicKey: "public", privateKey: "private", subject: "mailto:test@example.com"}}
 }
-func request(t *testing.T, h http.Handler, method, path string, body any, origin, token, cookie string) *httptest.ResponseRecorder {
+func request(t *testing.T, h http.Handler, method, path string, body any, origin, token, cookie string, headers ...string) *httptest.ResponseRecorder {
 	t.Helper()
 	var b []byte
 	if body != nil {
@@ -48,6 +48,9 @@ func request(t *testing.T, h http.Handler, method, path string, body any, origin
 	}
 	if cookie != "" {
 		r.Header.Set("Cookie", cookie)
+	}
+	for i := 0; i+1 < len(headers); i += 2 {
+		r.Header.Set(headers[i], headers[i+1])
 	}
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)

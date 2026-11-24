@@ -16,11 +16,11 @@
 <body>
   <div id="pullRefresh" class="pull-refresh" role="status" aria-live="polite" hidden><span class="pull-refresh-spinner" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span id="pullRefreshLabel" class="pull-refresh-label"></span></div>
   <main class="container">
-    <header id="appHeader"><a id="inboxHome" class="brand-home" href="#inboxPanel" aria-label="Zum Posteingang"><img class="mark" src="/icon.svg" alt="" width="36" height="36"><h1>pushie <span id="syncIndicator" class="sync-indicator" role="status" hidden></span></h1></a><div class="header-menu">
+    <header id="appHeader"><a id="inboxHome" class="brand-home" href="#inboxPanel" aria-label="Zum Posteingang"><img class="mark" src="/icon.svg" alt="" width="36" height="36"><h1>pushie <span id="syncIndicator" class="sync-indicator" role="status" hidden></span></h1></a><span id="headerUnreadBadge" class="count" role="status" aria-label="Ungelesen" title="Ungelesen" hidden></span><div class="header-menu">
       <button id="themeToggle" class="icon-button theme-toggle" type="button" aria-label="Dunkelmodus" title="Dunkelmodus" aria-pressed="false"><svg class="theme-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14A8.5 8.5 0 0 1 10 3.5 8.5 8.5 0 1 0 20.5 14Z"/></svg><svg class="theme-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/></svg></button>
       <button id="menuToggle" class="icon-button" type="button" aria-label="Menü" title="Menü" aria-expanded="false" aria-controls="headerMenu"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
       <nav id="headerMenu" class="menu-popover" aria-label="Menü" hidden>
-        <button id="messagesShortcut" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 4h16v12H8l-4 4Z"/></svg><span>Nachrichten</span></button>
+        <button id="notificationsShortcut" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 4h16v12H8l-4 4Z"/></svg><span>Mitteilungen</span></button>
         <button id="devicesShortcut" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 2h8v20H8ZM11 18h2"/></svg><span>Geräte</span></button>
         <button id="topicsShortcut" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 8h16M4 16h16M10 3l-3 18M17 3l-3 18"/></svg><span>Topics</span></button>
         <button id="accountShortcut" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 21a8 8 0 0 1 16 0M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8"/></svg><span>Kontoverwaltung</span></button>
@@ -54,35 +54,32 @@
 
       </section>
       <section class="panel" id="inboxPanel">
-        <div class="heading-row messages-heading">
-          <h2>Nachrichten</h2>
+        <div class="heading-row notifications-heading">
+          <h2>Mitteilungen</h2>
         </div>
-        <div id="messageTabs" class="message-tabs" role="tablist" aria-label="Nachrichten">
+        <div id="notificationTabs" class="notification-tabs" role="tablist" aria-label="Mitteilungen">
           <button id="receivedTab" type="button" role="tab" aria-selected="true" aria-controls="receivedPanel" tabindex="0">Empfangen <span id="unreadBadge" class="count" hidden></span></button>
           <button id="sentTab" type="button" role="tab" aria-selected="false" aria-controls="sentPanel" tabindex="-1">Gesendet</button>
         </div>
-        <div class="message-toolbar">
-          <button id="openSend" type="button" class="primary" hidden><span aria-hidden="true">＋</span> Neue Nachricht</button>
-          <div class="toolbar-actions">
-            <button id="readAll" type="button" class="small quiet" hidden>Alle gelesen</button>
-            <details id="messageActions" class="message-actions">
-              <summary>Weitere Aktionen</summary>
-              <div class="message-actions-menu">
-            <button id="refreshInbox" type="button" class="small quiet refresh-control" aria-label="Aktualisieren" title="Aktualisieren"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3A7 7 0 0 0 17.9 17"/></svg><span class="button-label">Aktualisieren</span></button>
-            <button id="refreshSentMessages" type="button" class="small quiet refresh-control" aria-label="Aktualisieren" title="Aktualisieren" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3A7 7 0 0 0 17.9 17"/></svg><span class="button-label">Aktualisieren</span></button>
-                <button id="cleanupInboxMessages" type="button" class="small danger">Alle löschen …</button>
-                <button id="cleanupSentMessages" type="button" class="small danger" hidden>Alle löschen …</button>
-              </div>
-            </details>
-          </div>
+        <div class="notification-toolbar">
+          <button id="openSend" type="button" class="primary" hidden><span aria-hidden="true">＋</span> Neue Mitteilung</button>
+          <button id="refreshInbox" type="button" class="small quiet refresh-control" aria-label="Aktualisieren" title="Aktualisieren"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3A7 7 0 0 0 17.9 17"/></svg><span class="button-label">Aktualisieren</span></button>
+          <button id="refreshSentNotifications" type="button" class="small quiet refresh-control" aria-label="Aktualisieren" title="Aktualisieren" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.5-1L20 9M4 15l2.4 3A7 7 0 0 0 17.9 17"/></svg><span class="button-label">Aktualisieren</span></button>
         </div>
         <div id="receivedPanel" role="tabpanel" aria-labelledby="receivedTab" tabindex="0">
-          <div id="receivedFilters" class="message-filters" role="group" aria-label="Nach Topic filtern"></div>
+          <div id="receivedFilters" class="notification-filters" role="group" aria-label="Nach Topic filtern"></div>
+          <div class="toolbar-actions notification-bulk-actions" role="group" aria-label="Aktionen für diese Liste">
+            <button id="readAll" type="button" class="small quiet" hidden>Alle gelesen</button>
+            <button id="cleanupInboxNotifications" type="button" class="small danger" disabled>Alle löschen …</button>
+          </div>
           <div id="inbox" class="list" aria-live="polite"></div>
         </div>
         <div id="sentPanel" role="tabpanel" aria-labelledby="sentTab" tabindex="0" hidden>
-          <div id="sentFilters" class="message-filters" role="group" aria-label="Nach Topic filtern"></div>
-          <div id="sentMessages" class="list" aria-live="polite"></div>
+          <div id="sentFilters" class="notification-filters" role="group" aria-label="Nach Topic filtern"></div>
+          <div class="toolbar-actions notification-bulk-actions" role="group" aria-label="Aktionen für diese Liste">
+            <button id="cleanupSentNotifications" type="button" class="small danger" disabled>Alle löschen …</button>
+          </div>
+          <div id="sentNotifications" class="list" aria-live="polite"></div>
         </div>
       </section>
       <section class="panel">
@@ -92,9 +89,8 @@
         <label for="deviceName">Gerätename</label>
         <input id="deviceName" maxlength="80" placeholder="z. B. Mein iPhone" value="Mein Gerät">
         <button id="subscribe" class="primary">Push auf diesem Gerät aktivieren</button>
-        <button id="setupDevice" type="button">Gerät einrichten</button>
         <h3>Registrierte Geräte</h3>
-        <p class="hint">Wähle je Gerät, welche abonnierten Topics Push auslösen. Alle Topic-Nachrichten bleiben im Posteingang. Direktnachrichten sind davon unabhängig.</p>
+        <p class="hint">Wähle je Gerät, welche abonnierten Topics Push auslösen. Alle Topic-Mitteilungen bleiben im Posteingang. Direktmitteilungen sind davon unabhängig.</p>
         <div id="devices" class="list"></div>
       </section>
       <section class="panel">
@@ -103,9 +99,9 @@
         <label for="accountTheme">Design</label>
         <select id="accountTheme"><option value="auto">Automatisch (System)</option><option value="light">Hell</option><option value="dark">Dunkel</option></select>
         <p class="hint">Automatisch folgt dem hellen oder dunklen Erscheinungsbild deines Geräts.</p>
-        <h3>Nachrichten lesen</h3>
-        <label class="check-row"><input id="manualRead" type="checkbox" role="switch"> Nachrichten manuell als gelesen markieren</label>
-        <p class="hint">Wenn aktiviert, bleiben Nachrichten beim Öffnen und beim Antippen einer Push-Benachrichtigung ungelesen. Verwende Gelesen oder Alle gelesen.</p>
+        <h3>Mitteilungen lesen</h3>
+        <label class="check-row"><input id="manualRead" type="checkbox" role="switch"> Mitteilungen manuell als gelesen markieren</label>
+        <p class="hint">Wenn aktiviert, bleiben Mitteilungen beim Öffnen und beim Antippen einer Push-Mitteilung ungelesen. Verwende Gelesen oder Alle gelesen.</p>
         <h3>Geräteeinrichtung</h3>
         <p class="hint">Installationshinweise und Push-Registrierung für dieses Gerät erneut öffnen.</p>
         <button id="restartOnboarding" type="button">Einrichtung erneut starten</button>
@@ -128,7 +124,7 @@
       <section class="panel admin-panel" id="adminPanel" hidden>
         <div class="heading-row"><div><h2>Administration</h2></div><span class="admin-tag">ADMIN</span></div>
         <h3>Einstellungen</h3>
-        <h3>Benachrichtigung senden</h3>
+        <h3>Mitteilung senden</h3>
         <div class="form-grid">
           <div><label for="targetType">Empfänger-Typ</label><select id="targetType"><option value="topic">Topic</option><option value="user">Benutzer</option><option value="broadcast">Alle Benutzer</option></select></div>
           <div id="sendTargetField"><label for="sendTarget">Empfänger</label><select id="sendTarget"></select></div>
@@ -143,15 +139,10 @@
         </div><p id="recipientSummary" class="hint"></p>
         <label for="sendTitle">Titel</label>
         <input id="sendTitle" maxlength="160" placeholder="Systemmeldung" value="Push">
-        <label for="sendBody">Nachricht</label>
-        <textarea id="sendBody" rows="3" maxlength="2000" placeholder="Nachricht eingeben"></textarea>
-        <details id="sendMore" class="compose-details">
-          <summary>Langtext hinzufügen</summary>
-          <label for="sendLongText">Optionaler Langtext (bis 256 KB)</label>
-          <textarea id="sendLongText" rows="4" maxlength="262144" placeholder="Details, Fehlerprotokoll oder ausführliche Beschreibung"></textarea>
-          <p class="hint">Nur in der App sichtbar, nicht in der Push-Benachrichtigung.</p>
-        </details>
-        <div class="dialog-actions"><button id="cancelSend" type="button">Abbrechen</button><button id="adminSend" type="button" class="primary">Nachricht senden</button></div>
+        <label for="sendBody">Mitteilung</label>
+        <textarea id="sendBody" rows="5" maxlength="262144" placeholder="Mitteilung eingeben"></textarea>
+        <p class="hint">Bis 256 KB. Lange Mitteilungen werden vollständig im Posteingang gespeichert und als kurze Push-Vorschau gesendet.</p>
+        <div class="dialog-actions"><button id="cancelSend" type="button">Abbrechen</button><button id="adminSend" type="button" class="primary">Mitteilung senden</button></div>
         <p id="sendResult" class="hint" aria-live="polite"></p>
         <button id="refreshDeliveryStatus" class="small" hidden>Zustellstatus aktualisieren</button>
         <div id="inviteSection" class="heading-row"><div><h2>Benutzerverwaltung</h2><p class="hint">Konten und Administratorrechte verwalten.</p></div><button id="refreshUsers" class="small">Aktualisieren</button></div>
@@ -162,11 +153,9 @@
         <button id="createInvite">Einmaligen Einladungscode erstellen</button>
         <div id="inviteResult" class="secret-display" hidden></div>
         <h3>Integrationsschlüssel</h3>
-        <p class="hint">Unabhängig von persönlichen Konten. Alle Senderechte erlauben Themen, Benutzer, Geräte und Rundsendungen.</p>
+        <p class="hint">Für Home Assistant, Watchtower und andere Integrationen. Erlaubt das Senden an Themen, Benutzer, Geräte und alle Konten.</p>
         <label for="integrationKeyName">Name der Integration</label>
         <input id="integrationKeyName" maxlength="80" placeholder="z. B. Watchtower">
-        <label for="integrationKeyScope">Berechtigung</label>
-        <select id="integrationKeyScope"><option value="watchtower">Nur Watchtower</option><option value="send">Alle Senderechte (Home Assistant)</option></select>
         <button id="createIntegrationKey">Integrationsschlüssel erstellen</button>
         <div id="newIntegrationKey" hidden>
           <p class="hint">Kopiere den Schlüssel jetzt. Er wird nur einmal angezeigt.</p>
@@ -179,7 +168,7 @@
         <label for="topicName">Topic-Name</label>
         <input id="topicName" maxlength="40" placeholder="z. B. homeserver">
         <label for="topicDescription">Beschreibung</label>
-        <input id="topicDescription" maxlength="200" placeholder="Benachrichtigungen zu meinem Server">
+        <input id="topicDescription" maxlength="200" placeholder="Mitteilungen zu meinem Server">
         <button id="createTopic">Topic hinzufügen</button>
         <div class="separator" id="storageSection">SQLite-Datenbank: Statistiken und Wartung</div>
         <div class="heading-row">
@@ -190,10 +179,10 @@
         <h3>Alte Datensätze bereinigen</h3>
         <p class="hint">Keine automatische Löschung. Zuerst Vorschau anzeigen, dann ausdrücklich bestätigen. Laufende Push-Zustellungen bleiben erhalten.</p>
         <div class="settings-grid">
-          <div><label for="cleanupMessageDays">Nachrichten älter als (Tage)</label><input id="cleanupMessageDays" type="number" min="1" max="3650" value="90"></div>
+          <div><label for="cleanupNotificationDays">Mitteilungen älter als (Tage)</label><input id="cleanupNotificationDays" type="number" min="1" max="3650" value="90"></div>
           <div><label for="cleanupDeliveryDays">Abgeschlossene Zustellungen älter als (Tage)</label><input id="cleanupDeliveryDays" type="number" min="1" max="3650" value="30"></div>
         </div>
-        <label class="check-row" for="cleanupUnread"><input id="cleanupUnread" type="checkbox"> Auch ungelesene alte Nachrichten löschen (standardmäßig geschützt)</label>
+        <label class="check-row" for="cleanupUnread"><input id="cleanupUnread" type="checkbox"> Auch ungelesene alte Mitteilungen löschen (standardmäßig geschützt)</label>
         <button id="previewStorageCleanup">Löschvorschau berechnen</button>
         <div id="cleanupPreview" class="storage-preview" role="status" aria-live="polite" hidden></div>
         <label for="cleanupConfirmation">Zum Löschen <b>LÖSCHEN</b> eingeben</label>
@@ -235,8 +224,9 @@
   <script src="/version.js?v=__PUSHIE_VERSION__" defer></script>
   <script src="/trace.js?v=__PUSHIE_VERSION__" defer></script>
   <script src="/sync.js?v=__PUSHIE_VERSION__" defer></script>
-  <script src="/messages.js?v=__PUSHIE_VERSION__" defer></script>
+  <script src="/notifications.js?v=__PUSHIE_VERSION__" defer></script>
   <script src="/onboarding.js?v=__PUSHIE_VERSION__" defer></script>
+  <script src="/device-activity.js?v=__PUSHIE_VERSION__" defer></script>
   <script src="/app.js?v=__PUSHIE_VERSION__" defer></script>
   <script src="/pull-refresh.js?v=__PUSHIE_VERSION__" defer></script>
 </body>

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestSentMessagesOwnershipAndDeliveryDetails(t *testing.T) {
+func TestSentNotificationsOwnershipAndDeliveryDetails(t *testing.T) {
 	a := testApp(t)
 	addTestUser(t, a, "alice", "admin", nil)
 	addTestUser(t, a, "bob", "", nil)
@@ -22,7 +22,7 @@ func TestSentMessagesOwnershipAndDeliveryDetails(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := a.db.update(func(d *database) error {
-		d.Deliveries["job"] = &delivery{ID: "job", MessageID: sent.MessageID, SenderUserID: "alice", UserID: "bob", DeviceID: "phone", DeviceName: "Bob phone", Status: "retry", Attempts: 2, LastError: "HTTP 503", ReceiptSecret: "secret-not-for-api"}
+		d.Deliveries["job"] = &delivery{ID: "job", NotificationID: sent.NotificationID, SenderUserID: "alice", UserID: "bob", DeviceID: "phone", DeviceName: "Bob phone", Status: "retry", Attempts: 2, LastError: "HTTP 503", ReceiptSecret: "secret-not-for-api"}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -31,36 +31,36 @@ func TestSentMessagesOwnershipAndDeliveryDetails(t *testing.T) {
 		cookie string
 		own    bool
 	}{{alice, true}, {bob, false}, {other, false}} {
-		r = request(t, h, "GET", "/api/me/sent-messages", nil, "", "", tc.cookie)
+		r = request(t, h, "GET", "/api/me/sent-notifications", nil, "", "", tc.cookie)
 		if r.Code != 200 {
 			t.Fatalf("list: %d %s", r.Code, r.Body.String())
 		}
 		var result struct {
-			Messages []struct {
-				inboxMessage
+			Notifications []struct {
+				inboxNotification
 				Deliveries []deliveryView `json:"deliveries"`
-			} `json:"messages"`
+			} `json:"notifications"`
 		}
 		if err := json.Unmarshal(r.Body.Bytes(), &result); err != nil {
 			t.Fatal(err)
 		}
 		if tc.own {
-			if len(result.Messages) != 1 || result.Messages[0].ID != sent.MessageID || len(result.Messages[0].Deliveries) != 1 || result.Messages[0].Deliveries[0].LastError != "HTTP 503" {
+			if len(result.Notifications) != 1 || result.Notifications[0].ID != sent.NotificationID || len(result.Notifications[0].Deliveries) != 1 || result.Notifications[0].Deliveries[0].LastError != "HTTP 503" {
 				t.Fatalf("missing sent details: %s", r.Body.String())
 			}
-		} else if len(result.Messages) != 0 {
-			t.Fatalf("another account sees sent messages: %s", r.Body.String())
+		} else if len(result.Notifications) != 0 {
+			t.Fatalf("another account sees sent notifications: %s", r.Body.String())
 		}
 		if strings.Contains(r.Body.String(), "secret-not-for-api") {
 			t.Fatal("receipt secret exposed")
 		}
 	}
-	if r = request(t, h, "GET", "/api/me/sent-messages", nil, "", "", ""); r.Code != 401 {
+	if r = request(t, h, "GET", "/api/me/sent-notifications", nil, "", "", ""); r.Code != 401 {
 		t.Fatalf("unauthenticated: %d", r.Code)
 	}
 }
 
-func TestDeletedOwnMessageDoesNotReappearInSentHistory(t *testing.T) {
+func TestDeletedOwnNotificationDoesNotReappearInSentHistory(t *testing.T) {
 	a := testApp(t)
 	addTestUser(t, a, "alice", "admin", []string{"shared"})
 	addTestUser(t, a, "bob", "", []string{"shared"})
@@ -82,43 +82,43 @@ func TestDeletedOwnMessageDoesNotReappearInSentHistory(t *testing.T) {
 		if err := json.Unmarshal(r.Body.Bytes(), &result); err != nil {
 			t.Fatal(err)
 		}
-		return result.MessageID
+		return result.NotificationID
 	}
 	oldID := send()
 	if err := a.db.update(func(d *database) error {
-		d.Deliveries["retained"] = &delivery{ID: "retained", MessageID: oldID, SenderUserID: "alice", UserID: "bob", Status: "pending"}
+		d.Deliveries["retained"] = &delivery{ID: "retained", NotificationID: oldID, SenderUserID: "alice", UserID: "bob", Status: "pending"}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
 	// A recipient deleting their copy must not hide the sender's history.
-	r := request(t, h, "DELETE", "/api/me/messages/"+oldID, nil, a.cfg.origin, "", bob)
+	r := request(t, h, "DELETE", "/api/me/notifications/"+oldID, nil, a.cfg.origin, "", bob)
 	if r.Code != 200 {
 		t.Fatalf("recipient delete: %d", r.Code)
 	}
-	r = request(t, h, "GET", "/api/me/sent-messages", nil, "", "", alice)
+	r = request(t, h, "GET", "/api/me/sent-notifications", nil, "", "", alice)
 	if !strings.Contains(r.Body.String(), oldID) {
 		t.Fatal("recipient deletion removed sender history")
 	}
 	// Restore a recipient copy to exercise both reconstruction sources.
 	if err := a.db.update(func(d *database) error {
-		d.Messages["bob"] = append(d.Messages["bob"], d.Messages["alice"][0])
+		d.Notifications["bob"] = append(d.Notifications["bob"], d.Notifications["alice"][0])
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	r = request(t, h, "DELETE", "/api/me/messages/"+oldID, nil, a.cfg.origin, "", alice)
+	r = request(t, h, "DELETE", "/api/me/notifications/"+oldID, nil, a.cfg.origin, "", alice)
 	if r.Code != 200 {
 		t.Fatalf("sender delete: %d", r.Code)
 	}
 	newID := send()
 	check := func() {
 		t.Helper()
-		r := request(t, h, "GET", "/api/me/sent-messages", nil, "", "", alice)
+		r := request(t, h, "GET", "/api/me/sent-notifications", nil, "", "", alice)
 		if r.Code != 200 || strings.Contains(r.Body.String(), oldID) || !strings.Contains(r.Body.String(), newID) {
-			t.Fatalf("deleted message resurrected or new message missing: %s", r.Body.String())
+			t.Fatalf("deleted notification resurrected or new notification missing: %s", r.Body.String())
 		}
-		r = request(t, h, "GET", "/api/me/messages", nil, "", "", bob)
+		r = request(t, h, "GET", "/api/me/notifications", nil, "", "", bob)
 		if !strings.Contains(r.Body.String(), oldID) {
 			t.Fatal("sender deletion removed recipient copy")
 		}
@@ -142,8 +142,8 @@ func TestSentHistoryDeletionAndCleanup(t *testing.T) {
 	addTestUser(t, a, "bob", "", nil)
 	alice, bob := signIn(t, a, "alice"), signIn(t, a, "bob")
 	if err := a.db.update(func(db *database) error {
-		db.Messages["bob"] = []inboxMessage{{ID: "one", SenderUserID: "alice"}, {ID: "two", SenderUserID: "alice"}, {ID: "other", SenderUserID: "bob"}}
-		db.Deliveries["job"] = &delivery{ID: "job", MessageID: "one", SenderUserID: "alice", UserID: "bob", Status: "pending"}
+		db.Notifications["bob"] = []inboxNotification{{ID: "one", SenderUserID: "alice"}, {ID: "two", SenderUserID: "alice"}, {ID: "other", SenderUserID: "bob"}}
+		db.Deliveries["job"] = &delivery{ID: "job", NotificationID: "one", SenderUserID: "alice", UserID: "bob", Status: "pending"}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -154,11 +154,11 @@ func TestSentHistoryDeletionAndCleanup(t *testing.T) {
 		body                         any
 		code                         int
 	}{
-		{"DELETE", "/api/me/sent-messages/one", bob, a.cfg.origin, nil, 404},
-		{"DELETE", "/api/me/sent-messages/one", alice, "https://evil.example", nil, 403},
-		{"DELETE", "/api/me/sent-messages/one", alice, a.cfg.origin, nil, 200},
-		{"POST", "/api/me/sent-messages/cleanup", alice, a.cfg.origin, map[string]string{}, 400},
-		{"POST", "/api/me/sent-messages/cleanup", alice, a.cfg.origin, map[string]string{"confirm": "LÖSCHEN"}, 200},
+		{"DELETE", "/api/me/sent-notifications/one", bob, a.cfg.origin, nil, 404},
+		{"DELETE", "/api/me/sent-notifications/one", alice, "https://evil.example", nil, 403},
+		{"DELETE", "/api/me/sent-notifications/one", alice, a.cfg.origin, nil, 200},
+		{"POST", "/api/me/sent-notifications/cleanup", alice, a.cfg.origin, map[string]string{}, 400},
+		{"POST", "/api/me/sent-notifications/cleanup", alice, a.cfg.origin, map[string]string{"confirm": "LÖSCHEN"}, 200},
 	} {
 		r := request(t, h, tc.method, tc.path, tc.body, tc.origin, "", tc.cookie)
 		if r.Code != tc.code {
@@ -166,11 +166,11 @@ func TestSentHistoryDeletionAndCleanup(t *testing.T) {
 		}
 	}
 	snap := a.db.snapshot()
-	if len(snap.Messages["bob"]) != 3 || snap.Deliveries["job"].Status != "pending" || !snap.Deliveries["job"].SentDeleted || snap.Messages["bob"][2].SentDeleted {
+	if len(snap.Notifications["bob"]) != 3 || snap.Deliveries["job"].Status != "pending" || !snap.Deliveries["job"].SentDeleted || snap.Notifications["bob"][2].SentDeleted {
 		t.Fatal("cleanup changed recipient or other sender state")
 	}
-	r := request(t, h, "GET", "/api/me/sent-messages", nil, "", "", alice)
-	if !strings.Contains(r.Body.String(), `"messages":[]`) {
+	r := request(t, h, "GET", "/api/me/sent-notifications", nil, "", "", alice)
+	if !strings.Contains(r.Body.String(), `"notifications":[]`) {
 		t.Fatal(r.Body.String())
 	}
 	reopened, err := openStore(a.db.path)

@@ -10,70 +10,70 @@ import (
 )
 
 // Cleanup is deliberately opt-in, never executed by the background delivery worker.
-// In particular, unread messages and active deliveries are retained by default.
+// In particular, unread notifications and active deliveries are retained by default.
 type cleanupOptions struct {
-	MessageDays  int    `json:"messageDays"`
-	DeliveryDays int    `json:"deliveryDays"`
-	DeleteUnread bool   `json:"deleteUnread"`
-	Confirm      string `json:"confirm,omitempty"`
+	NotificationDays int    `json:"notificationDays"`
+	DeliveryDays     int    `json:"deliveryDays"`
+	DeleteUnread     bool   `json:"deleteUnread"`
+	Confirm          string `json:"confirm,omitempty"`
 }
 
 type cleanupResult struct {
-	Messages       int   `json:"messages"`
-	UnreadMessages int   `json:"unreadMessages"`
-	Deliveries     int   `json:"deliveries"`
-	Invites        int   `json:"expiredInvites"`
-	Idempotency    int   `json:"expiredIdempotencyKeys"`
-	LongTextBytes  int64 `json:"longTextBytes"`
+	Notifications       int   `json:"notifications"`
+	UnreadNotifications int   `json:"unreadNotifications"`
+	Deliveries          int   `json:"deliveries"`
+	Invites             int   `json:"expiredInvites"`
+	Idempotency         int   `json:"expiredIdempotencyKeys"`
+	LongTextBytes       int64 `json:"longTextBytes"`
 }
 
 func (o cleanupOptions) validate() error {
-	if o.MessageDays < 1 || o.MessageDays > 3650 || o.DeliveryDays < 1 || o.DeliveryDays > 3650 {
+	if o.NotificationDays < 1 || o.NotificationDays > 3650 || o.DeliveryDays < 1 || o.DeliveryDays > 3650 {
 		return errors.New("Aufbewahrungsfristen müssen zwischen 1 und 3650 Tagen liegen")
 	}
 	return nil
 }
 
 func terminalDelivery(status string) bool {
-	return status == "accepted" || status == "confirmed" || status == "failed" || status == "unconfirmed"
+	return status == "accepted" || status == "confirmed" || status == "failed" || status == "unconfirmed" || status == "muted"
 }
 
 // Clean a mutable snapshot. Results are identical for a preview and a committed
 // transaction given the same snapshot and reference instant.
 func cleanupDatabase(d *database, opt cleanupOptions, now time.Time) cleanupResult {
 	var result cleanupResult
-	msgCutoff := now.AddDate(0, 0, -opt.MessageDays)
+	msgCutoff := now.AddDate(0, 0, -opt.NotificationDays)
 	deliveryCutoff := now.AddDate(0, 0, -opt.DeliveryDays)
 	active := make(map[string]bool)
-	protectedMessageIDs := make(map[string]bool)
+	protectedNotificationIDs := make(map[string]bool)
 	for _, record := range d.Idempotency {
 		if !record.CreatedAt.Before(now.Add(-7 * 24 * time.Hour)) {
-			protectedMessageIDs[record.Result.MessageID] = true
+			protectedNotificationIDs[record.Result.NotificationID] = true
 		}
 	}
 	for _, job := range d.Deliveries {
 		if !terminalDelivery(job.Status) {
-			active[job.UserID+"\x00"+job.MessageID] = true
+			active[job.UserID+"\x00"+job.NotificationID] = true
 		}
 	}
-	for uid, messages := range d.Messages {
-		kept := make([]inboxMessage, 0, len(messages))
-		for _, m := range messages {
-			eligible := m.CreatedAt.Before(msgCutoff) && (opt.DeleteUnread || m.ReadAt != nil) && !active[uid+"\x00"+m.ID] && !protectedMessageIDs[m.ID]
+	for uid, notifications := range d.Notifications {
+		kept := make([]inboxNotification, 0, len(notifications))
+		for _, m := range notifications {
+			eligible := m.CreatedAt.Before(msgCutoff) && (opt.DeleteUnread || m.ReadAt != nil) && !active[uid+"\x00"+m.ID] && !protectedNotificationIDs[m.ID]
 			if eligible {
-				result.Messages++
+				result.Notifications++
 				result.LongTextBytes += int64(len(m.LongText))
 				if m.ReadAt == nil {
-					result.UnreadMessages++
+					result.UnreadNotifications++
 				}
 			} else {
 				kept = append(kept, m)
 			}
 		}
 		if len(kept) == 0 {
-			delete(d.Messages, uid)
+			delete(d.Notifications, uid)
 		} else {
-			d.Messages[uid] = kept
+			d.Notifications[uid] = kept
 		}
 	}
 	for id, job := range d.Deliveries {
@@ -118,24 +118,24 @@ func (s *store) runCleanup(opt cleanupOptions, now time.Time) (cleanupResult, er
 }
 
 type storageStatistics struct {
-	Users            int            `json:"users"`
-	Devices          int            `json:"devices"`
-	Topics           int            `json:"topics"`
-	Subscribers      int            `json:"topicSubscriptions"`
-	Messages         int            `json:"messages"`
-	UnreadMessages   int            `json:"unreadMessages"`
-	LongTextBytes    int64          `json:"longTextBytes"`
-	Deliveries       int            `json:"deliveries"`
-	DeliveryStatuses map[string]int `json:"deliveryStatuses"`
-	Invites          int            `json:"invites"`
-	IdempotencyKeys  int            `json:"idempotencyKeys"`
-	MainDBBytes      int64          `json:"mainDbBytes"`
-	WALBytes         int64          `json:"walBytes"`
-	SHMBytes         int64          `json:"shmBytes"`
-	TotalDiskBytes   int64          `json:"totalDiskBytes"`
-	FreePagesBytes   int64          `json:"freePagesBytes"`
-	PageSize         int64          `json:"pageSize"`
-	Integrity        string         `json:"integrity"`
+	Users               int            `json:"users"`
+	Devices             int            `json:"devices"`
+	Topics              int            `json:"topics"`
+	Subscribers         int            `json:"topicSubscriptions"`
+	Notifications       int            `json:"notifications"`
+	UnreadNotifications int            `json:"unreadNotifications"`
+	LongTextBytes       int64          `json:"longTextBytes"`
+	Deliveries          int            `json:"deliveries"`
+	DeliveryStatuses    map[string]int `json:"deliveryStatuses"`
+	Invites             int            `json:"invites"`
+	IdempotencyKeys     int            `json:"idempotencyKeys"`
+	MainDBBytes         int64          `json:"mainDbBytes"`
+	WALBytes            int64          `json:"walBytes"`
+	SHMBytes            int64          `json:"shmBytes"`
+	TotalDiskBytes      int64          `json:"totalDiskBytes"`
+	FreePagesBytes      int64          `json:"freePagesBytes"`
+	PageSize            int64          `json:"pageSize"`
+	Integrity           string         `json:"integrity"`
 }
 
 func fileBytes(path string) int64 {
@@ -146,7 +146,7 @@ func fileBytes(path string) int64 {
 	return info.Size()
 }
 
-// SQL aggregate queries avoid transferring large message bodies and are
+// SQL aggregate queries avoid transferring large notification bodies and are
 // serialized against in-process updates for internally consistent counts.
 func (s *store) storageStats() (storageStatistics, error) {
 	s.mu.RLock()
@@ -159,7 +159,7 @@ func (s *store) storageStats() (storageStatistics, error) {
 		{&x.Users, `SELECT COUNT(*) FROM users`},
 		{&x.Devices, `SELECT COUNT(*) FROM devices`},
 		{&x.Topics, `SELECT COUNT(*) FROM topics`},
-		{&x.Messages, `SELECT COUNT(*) FROM messages`},
+		{&x.Notifications, `SELECT COUNT(*) FROM notifications`},
 		{&x.Deliveries, `SELECT COUNT(*) FROM deliveries`},
 		{&x.Invites, `SELECT COUNT(*) FROM invites`},
 		{&x.IdempotencyKeys, `SELECT COUNT(*) FROM idempotency`},
@@ -168,14 +168,14 @@ func (s *store) storageStats() (storageStatistics, error) {
 			return x, err
 		}
 	}
-	if err := s.sqlDB.QueryRow(`SELECT COALESCE(SUM(length(long_text)),0) FROM messages`).Scan(&x.LongTextBytes); err != nil {
+	if err := s.sqlDB.QueryRow(`SELECT COALESCE(SUM(length(long_text)),0) FROM notifications`).Scan(&x.LongTextBytes); err != nil {
 		return x, err
 	}
 	// Read status is in the per-row JSON payload and the in-process cache.
-	for _, messages := range s.db.Messages {
-		for _, m := range messages {
+	for _, notifications := range s.db.Notifications {
+		for _, m := range notifications {
 			if m.ReadAt == nil {
-				x.UnreadMessages++
+				x.UnreadNotifications++
 			}
 		}
 	}

@@ -8,19 +8,21 @@ function fixture(){
  const fields=Array.from({length:4},()=>({value:'private draft'}));
  const elements=new Map();
  const $=id=>{if(!elements.has(id))elements.set(id,{value:'private',children:['private'],replaceChildren(){this.children=[]},reset(){this.wasReset=true},querySelectorAll(){return fields}});return elements.get(id)};
- const context=vm.createContext({window:{},$,t:x=>x,identityEpoch:0,resetViews:null,closeHeaderMenu(){},setMessageTab(){},inboxMessages:[{body:'private'}],openInboxMessages:new Set(['private']),openSentMessages:new Set(['private']),receivedMessageList:null,sentMessageList:null,adminTargets:{users:['private']},lastSentMessageId:'private',storageCleanupPreview:{private:true}});
+ const context=vm.createContext({window:{},navigator:{},$,t:x=>x,identityEpoch:0,resetViews:null,closeHeaderMenu(){},setNotificationTab(){},inboxNotifications:[{body:'private'}],openInboxNotifications:new Set(['private']),openSentNotifications:new Set(['private']),receivedNotificationList:null,sentNotificationList:null,adminTargets:{users:['private']},lastSentNotificationId:'private',storageCleanupPreview:{private:true}});
+ vm.runInContext(source.slice(source.indexOf('function updateUnreadBadges('),source.indexOf('function renderInbox(')),context);
  vm.runInContext(source.slice(source.indexOf('function clearAccountState()')),context);
  vm.runInContext(source.slice(source.indexOf('async function api('),source.indexOf('async function ceremony(')),context);
  return {context,$,fields};
 }
-test('logout clears cached messages, invitation codes and drafts',()=>{
+test('logout clears cached notifications, invitation codes and drafts',()=>{
  const {context,$,fields}=fixture();
  vm.runInContext('clearAccountState()',context);
  assert.equal(context.identityEpoch,1);
- assert.equal(context.openInboxMessages.size,0);assert.equal(context.openSentMessages.size,0);
+ assert.equal(context.openInboxNotifications.size,0);assert.equal(context.openSentNotifications.size,0);
  assert.deepEqual($('centralLogList').children,[]);
  assert.equal($('centralLogFilters').wasReset,true);
- assert.equal(context.inboxMessages.length,0);
+ assert.equal(context.inboxNotifications.length,0);
+ for(const id of ['unreadBadge','headerUnreadBadge']){assert.equal($(id).textContent,'');assert.equal($(id).hidden,true)}
  assert.equal(context.adminTargets,null);
  assert.equal(context.storageCleanupPreview,null);
  for(const id of ['inbox','inviteResult','sendResult','cleanupPreview'])assert.deepEqual($(id).children,[]);
@@ -59,10 +61,10 @@ test('401 stops background refresh, clears caches and account data and shows log
   caches:{keys:async()=>['inbox','pushie-navigation'],delete:async key=>deleted.push(key)},
   sessionStorage:{clear(){deleted.push('session')}},fetch:async()=>{calls++;return {ok:false,status:401,json:async()=>({error:'Bitte anmelden'})}}});
  $('login').focus=()=>{focused=true};
- await assert.rejects(context.api('/api/me/messages'),/Bitte anmelden/);
+ await assert.rejects(context.api('/api/me/notifications'),/Bitte anmelden/);
  assert.equal(context.window.authRefreshStopped,true);assert.equal(context.me,null);assert.ok(rendered);assert.ok(focused);
- assert.deepEqual(deleted,['inbox','pushie-navigation','session']);assert.equal(context.inboxMessages.length,0);
- await assert.rejects(context.api('/api/me/messages'),/Bitte anmelden/);assert.equal(calls,1);
+ assert.deepEqual(deleted,['inbox','pushie-navigation','session']);assert.equal(context.inboxNotifications.length,0);
+ await assert.rejects(context.api('/api/me/notifications'),/Bitte anmelden/);assert.equal(calls,1);
  vm.runInContext(source.slice(source.indexOf('async function refresh('),source.indexOf('async function refreshUsers')),context);
  await context.refresh();assert.equal(calls,1);
 });

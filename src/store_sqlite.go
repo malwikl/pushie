@@ -20,7 +20,7 @@ import (
 // The application keeps a read cache for its existing API. All authoritative
 // persisted state is stored as individually addressable rows in SQLite.
 // Deploy one Go process against each DB file; this cache is not a distributed cache.
-const schemaVersion = 2
+const schemaVersion = 3
 
 func openStore(path string) (*store, error) {
 	if path == "" {
@@ -90,10 +90,17 @@ func openStore(path string) (*store, error) {
 	if err := tx.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return closeOnErr(err)
 	}
+	needsLogBackfill := version < 2
 	if version > schemaVersion {
 		return closeOnErr(fmt.Errorf("DB schema %d is newer than supported version %d", version, schemaVersion))
 	}
-	// Baseline migration (only schema version 1 exists so far).
+	if version == 1 || version == 2 {
+		if err := migrateNotificationSchema(tx, version); err != nil {
+			return closeOnErr(err)
+		}
+		version = 3
+	}
+	// Create a fresh database with notification terminology.
 	if version == 0 {
 		ddl := []string{
 			`CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
@@ -103,15 +110,15 @@ func openStore(path string) (*store, error) {
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)`,
 			`CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_user ON devices(user_id, id)`,
 			`CREATE TABLE IF NOT EXISTS invites (token_hash TEXT PRIMARY KEY, payload BLOB NOT NULL)`,
-			`CREATE TABLE IF NOT EXISTS messages (user_id TEXT NOT NULL, id TEXT NOT NULL,
+			`CREATE TABLE IF NOT EXISTS notifications (user_id TEXT NOT NULL, id TEXT NOT NULL,
                 created_at TEXT NOT NULL, long_text TEXT NOT NULL DEFAULT '', payload BLOB NOT NULL,
                 PRIMARY KEY(user_id, id), FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)`,
-			`CREATE INDEX IF NOT EXISTS idx_messages_user_created ON messages(user_id, created_at DESC)`,
-			`CREATE TABLE IF NOT EXISTS deliveries (id TEXT PRIMARY KEY, message_id TEXT NOT NULL,
+			`CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at DESC)`,
+			`CREATE TABLE IF NOT EXISTS deliveries (id TEXT PRIMARY KEY, notification_id TEXT NOT NULL,
                 user_id TEXT NOT NULL, device_id TEXT NOT NULL, status TEXT NOT NULL,
                 next_attempt_at TEXT, payload BLOB NOT NULL)`,
 			`CREATE INDEX IF NOT EXISTS idx_deliveries_due ON deliveries(status, next_attempt_at)`,
-			`CREATE INDEX IF NOT EXISTS idx_deliveries_message ON deliveries(message_id, user_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_deliveries_notification ON deliveries(notification_id, user_id)`,
 			`CREATE TABLE IF NOT EXISTS idempotency (key_hash TEXT PRIMARY KEY, payload BLOB NOT NULL)`,
 		}
 		for _, statement := range ddl {
@@ -124,13 +131,17 @@ func openStore(path string) (*store, error) {
 		}
 	}
 	if version < 2 {
-		if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS message_log (id TEXT PRIMARY KEY, payload BLOB NOT NULL)`); err != nil {
+		if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS notification_log (id TEXT PRIMARY KEY, payload BLOB NOT NULL)`); err != nil {
 			return closeOnErr(err)
 		}
 		if _, err := tx.Exec(`PRAGMA user_version = 2`); err != nil {
 			return closeOnErr(err)
 		}
 	}
+	if _, err := tx.Exec(`PRAGMA user_version = 3`); err != nil {
+		return closeOnErr(err)
+	}
+
 	s := &store{path: path, sqlDB: conn}
 	var initialized string
 	err = tx.QueryRow(`SELECT value FROM metadata WHERE key='initialized'`).Scan(&initialized)
@@ -143,7 +154,7 @@ func openStore(path string) (*store, error) {
 				if err := json.Unmarshal(raw, &data); err != nil {
 					return closeOnErr(fmt.Errorf("legacy JSON import %s: %w", legacy, err))
 				}
-				if data.Users == nil && data.Devices == nil && data.Topics == nil && data.Messages == nil {
+				if data.Users == nil && data.Devices == nil && data.Topics == nil && data.Notifications == nil {
 					return closeOnErr(fmt.Errorf("legacy JSON %s lacks expected database fields", legacy))
 				}
 				initialized = "imported from " + filepath.Base(legacy)
@@ -176,10 +187,10 @@ func openStore(path string) (*store, error) {
 			return closeOnErr(err)
 		}
 	}
-	if version < 2 {
+	if needsLogBackfill {
 		old := s.db
-		old.MessageLog = map[string]*messageLogRecord{}
-		backfillMessageLog(&s.db)
+		old.NotificationLog = map[string]*notificationLogRecord{}
+		backfillNotificationLog(&s.db)
 		if err := applyChanges(tx, old, s.db); err != nil {
 			return closeOnErr(err)
 		}
@@ -214,12 +225,12 @@ func loadDatabase(tx *sql.Tx) (database, error) {
 		query string
 		put   func(string, []byte) error
 	}{
-		{`SELECT id,payload FROM message_log`, func(k string, b []byte) error {
-			var x messageLogRecord
+		{`SELECT id,payload FROM notification_log`, func(k string, b []byte) error {
+			var x notificationLogRecord
 			if err := json.Unmarshal(b, &x); err != nil {
 				return err
 			}
-			d.MessageLog[k] = &x
+			d.NotificationLog[k] = &x
 			return nil
 		}},
 		{`SELECT id,payload FROM users`, func(k string, b []byte) error {
@@ -293,7 +304,7 @@ func loadDatabase(tx *sql.Tx) (database, error) {
 			return d, err
 		}
 	}
-	rows, err := tx.Query(`SELECT user_id,id,long_text,payload FROM messages ORDER BY created_at,id`)
+	rows, err := tx.Query(`SELECT user_id,id,long_text,payload FROM notifications ORDER BY created_at,id`)
 	if err != nil {
 		return d, err
 	}
@@ -304,13 +315,13 @@ func loadDatabase(tx *sql.Tx) (database, error) {
 			rows.Close()
 			return d, err
 		}
-		var m inboxMessage
+		var m inboxNotification
 		if err := json.Unmarshal(payload, &m); err != nil {
 			rows.Close()
 			return d, err
 		}
 		m.LongText = longText
-		d.Messages[uid] = append(d.Messages[uid], m)
+		d.Notifications[uid] = append(d.Notifications[uid], m)
 	}
 	err = rows.Err()
 	rows.Close()
@@ -333,11 +344,11 @@ func loadDatabase(tx *sql.Tx) (database, error) {
 		}
 	}
 	var disabled string
-	err = tx.QueryRow(`SELECT value FROM metadata WHERE key='message_log_disabled'`).Scan(&disabled)
+	err = tx.QueryRow(`SELECT value FROM metadata WHERE key='notification_log_disabled'`).Scan(&disabled)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return d, err
 	}
-	d.MessageLogDisabled = disabled == "true"
+	d.NotificationLogDisabled = disabled == "true"
 	d.BootstrapUsed = bootstrap == "1"
 	return d, nil
 }
@@ -359,7 +370,7 @@ func (s *store) update(fn func(*database) error) error {
 	if err := fn(&next); err != nil {
 		return err
 	}
-	refreshMessageLog(&next)
+	refreshNotificationLog(&next)
 	encoded, err := json.Marshal(next)
 	if err != nil {
 		return err
@@ -425,15 +436,15 @@ func syncJSONRows[T any](tx *sql.Tx, old, next map[string]T, upsert, remove stri
 }
 
 func applyChanges(tx *sql.Tx, old, next database) error {
-	if old.MessageLogDisabled != next.MessageLogDisabled {
-		if _, err := tx.Exec(`INSERT INTO metadata(key,value) VALUES('message_log_disabled',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, strconv.FormatBool(next.MessageLogDisabled)); err != nil {
+	if old.NotificationLogDisabled != next.NotificationLogDisabled {
+		if _, err := tx.Exec(`INSERT INTO metadata(key,value) VALUES('notification_log_disabled',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, strconv.FormatBool(next.NotificationLogDisabled)); err != nil {
 			return err
 		}
 	}
 
-	if err := syncJSONRows(tx, old.MessageLog, next.MessageLog,
-		`INSERT INTO message_log(id,payload) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload`,
-		`DELETE FROM message_log WHERE id=?`, func(k string, _ *messageLogRecord) ([]any, error) { return []any{k}, nil }); err != nil {
+	if err := syncJSONRows(tx, old.NotificationLog, next.NotificationLog,
+		`INSERT INTO notification_log(id,payload) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload`,
+		`DELETE FROM notification_log WHERE id=?`, func(k string, _ *notificationLogRecord) ([]any, error) { return []any{k}, nil }); err != nil {
 		return err
 	}
 	// Insert parent user records before devices and inbox foreign-key references.
@@ -443,14 +454,14 @@ func applyChanges(tx *sql.Tx, old, next database) error {
 		return err
 	}
 	if err := syncJSONRows(tx, old.Deliveries, next.Deliveries,
-		`INSERT INTO deliveries(id,message_id,user_id,device_id,status,next_attempt_at,payload) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET message_id=excluded.message_id,user_id=excluded.user_id,device_id=excluded.device_id,status=excluded.status,next_attempt_at=excluded.next_attempt_at,payload=excluded.payload`,
+		`INSERT INTO deliveries(id,notification_id,user_id,device_id,status,next_attempt_at,payload) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET notification_id=excluded.notification_id,user_id=excluded.user_id,device_id=excluded.device_id,status=excluded.status,next_attempt_at=excluded.next_attempt_at,payload=excluded.payload`,
 		`DELETE FROM deliveries WHERE id=?`,
 		func(k string, d *delivery) ([]any, error) {
-			return []any{k, d.MessageID, d.UserID, d.DeviceID, d.Status, sqliteTime(d.NextAttemptAt)}, nil
+			return []any{k, d.NotificationID, d.UserID, d.DeviceID, d.Status, sqliteTime(d.NextAttemptAt)}, nil
 		}); err != nil {
 		return err
 	}
-	if err := syncMessages(tx, old.Messages, next.Messages); err != nil {
+	if err := syncNotifications(tx, old.Notifications, next.Notifications); err != nil {
 		return err
 	}
 	if err := syncJSONRows(tx, old.Devices, next.Devices,
@@ -504,10 +515,10 @@ func sqliteTime(t time.Time) any {
 	}
 	return t.UTC().Format(time.RFC3339Nano)
 }
-func syncMessages(tx *sql.Tx, old, next map[string][]inboxMessage) error {
-	oldIndex := make(map[string]inboxMessage)
-	nextIndex := make(map[string]inboxMessage)
-	// length-prefixed key avoids ambiguities, but userId/messageId here are base64url.
+func syncNotifications(tx *sql.Tx, old, next map[string][]inboxNotification) error {
+	oldIndex := make(map[string]inboxNotification)
+	nextIndex := make(map[string]inboxNotification)
+	// length-prefixed key avoids ambiguities, but userId/notificationId here are base64url.
 	sep := "\x00"
 	for uid, list := range old {
 		for _, m := range list {
@@ -522,7 +533,7 @@ func syncMessages(tx *sql.Tx, old, next map[string][]inboxMessage) error {
 	for key := range oldIndex {
 		if _, ok := nextIndex[key]; !ok {
 			i := strings.IndexByte(key, 0)
-			if _, err := tx.Exec(`DELETE FROM messages WHERE user_id=? AND id=?`, key[:i], key[i+1:]); err != nil {
+			if _, err := tx.Exec(`DELETE FROM notifications WHERE user_id=? AND id=?`, key[:i], key[i+1:]); err != nil {
 				return err
 			}
 		}
@@ -542,7 +553,7 @@ func syncMessages(tx *sql.Tx, old, next map[string][]inboxMessage) error {
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`INSERT INTO messages(user_id,id,created_at,long_text,payload) VALUES(?,?,?,?,?) ON CONFLICT(user_id,id) DO UPDATE SET created_at=excluded.created_at,long_text=excluded.long_text,payload=excluded.payload`,
+		if _, err := tx.Exec(`INSERT INTO notifications(user_id,id,created_at,long_text,payload) VALUES(?,?,?,?,?) ON CONFLICT(user_id,id) DO UPDATE SET created_at=excluded.created_at,long_text=excluded.long_text,payload=excluded.payload`,
 			key[:i], key[i+1:], m.CreatedAt.UTC().Format(time.RFC3339Nano), m.LongText, payload); err != nil {
 			return err
 		}

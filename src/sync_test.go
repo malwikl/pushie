@@ -27,7 +27,7 @@ func TestSyncCommittedChangesAreScoped(t *testing.T) {
 	defer stop()
 	two, stop2 := a.db.subscribe("two")
 	defer stop2()
-	if err := a.db.update(func(d *database) error { d.Messages["one"] = []inboxMessage{{ID: "new"}}; return nil }); err != nil {
+	if err := a.db.update(func(d *database) error { d.Notifications["one"] = []inboxNotification{{ID: "new"}}; return nil }); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -40,13 +40,16 @@ func TestSyncCommittedChangesAreScoped(t *testing.T) {
 		t.Fatal("cross-user event")
 	default:
 	}
-	a.db.update(func(d *database) error { d.Messages["one"][0].ReadAt = new(time.Time); return errors.New("rollback") })
+	a.db.update(func(d *database) error {
+		d.Notifications["one"][0].ReadAt = new(time.Time)
+		return errors.New("rollback")
+	})
 	select {
 	case <-one.changed:
 		t.Fatal("rolled-back event")
 	default:
 	}
-	a.db.update(func(d *database) error { now := time.Now(); d.Messages["one"][0].ReadAt = &now; return nil })
+	a.db.update(func(d *database) error { now := time.Now(); d.Notifications["one"][0].ReadAt = &now; return nil })
 	select {
 	case <-one.changed:
 	default:
@@ -121,10 +124,18 @@ func TestSyncSocketHandshakeAndEvent(t *testing.T) {
 		}
 	}
 	readEvent()
-	if err := a.db.update(func(d *database) error { d.Messages["one"] = []inboxMessage{{ID: "new"}}; return nil }); err != nil {
+	if err := a.db.update(func(d *database) error { d.Notifications["one"] = []inboxNotification{{ID: "new"}}; return nil }); err != nil {
 		t.Fatal(err)
 	}
 	readEvent()
+	otherDeviceCookie := signIn(t, a, "one")
+	if w := request(t, a.routes(), "PUT", "/api/me/notifications/new/read", map[string]string{}, a.cfg.origin, "", otherDeviceCookie); w.Code != 200 {
+		t.Fatalf("read from another session: %d %s", w.Code, w.Body.String())
+	}
+	readEvent()
+	if w := request(t, a.routes(), "GET", "/api/me/notifications/unread", nil, "", "", a.cookieName()+"="+token); w.Code != 200 || strings.TrimSpace(w.Body.String()) != `{"unread":0}` {
+		t.Fatalf("read synced count: %d %s", w.Code, w.Body.String())
+	}
 	client.Close()
 	select {
 	case <-done:
@@ -187,7 +198,7 @@ func TestSyncControlFrames(t *testing.T) {
 	if !bytes.Equal(p, []byte{0x8a, 1, 'x'}) {
 		t.Fatalf("invalid pong %v", p)
 	}
-	// Client messages without masking are rejected immediately.
+	// Client notifications without masking are rejected immediately.
 	client.Write([]byte{0x89, 0})
 	select {
 	case <-done:

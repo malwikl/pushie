@@ -17,16 +17,16 @@ func TestStorageCleanupPreviewCommitAndReload(t *testing.T) {
 	old := now.Add(-120 * 24 * time.Hour)
 	recent := now.Add(-2 * time.Hour)
 	if err := a.db.update(func(d *database) error {
-		d.Messages["alice"] = []inboxMessage{
+		d.Notifications["alice"] = []inboxNotification{
 			{ID: "read-old", Title: "read", LongText: strings.Repeat("details", 100), CreatedAt: old, ReadAt: &old},
 			{ID: "unread-old", Title: "unread", CreatedAt: old},
 			{ID: "active-old", Title: "active", CreatedAt: old, ReadAt: &old},
 			{ID: "read-recent", Title: "recent", CreatedAt: recent, ReadAt: &recent},
 		}
-		d.Messages["bob"] = []inboxMessage{{ID: "bob-read-old", CreatedAt: old, ReadAt: &old}}
-		d.Deliveries["active"] = &delivery{ID: "active", UserID: "alice", MessageID: "active-old", Status: "retry", CreatedAt: old}
-		d.Deliveries["done"] = &delivery{ID: "done", UserID: "alice", MessageID: "read-old", Status: "confirmed", CreatedAt: old}
-		d.Deliveries["new-done"] = &delivery{ID: "new-done", UserID: "alice", MessageID: "read-recent", Status: "failed", CreatedAt: recent}
+		d.Notifications["bob"] = []inboxNotification{{ID: "bob-read-old", CreatedAt: old, ReadAt: &old}}
+		d.Deliveries["active"] = &delivery{ID: "active", UserID: "alice", NotificationID: "active-old", Status: "retry", CreatedAt: old}
+		d.Deliveries["done"] = &delivery{ID: "done", UserID: "alice", NotificationID: "read-old", Status: "confirmed", CreatedAt: old}
+		d.Deliveries["new-done"] = &delivery{ID: "new-done", UserID: "alice", NotificationID: "read-recent", Status: "failed", CreatedAt: recent}
 		d.Invites["expired"] = &invitation{Name: "exp", Expires: old}
 		d.Invites["valid"] = &invitation{Name: "valid", Expires: now.Add(time.Hour)}
 		d.Idempotency["expired"] = idempotencyRecord{CreatedAt: old}
@@ -35,15 +35,15 @@ func TestStorageCleanupPreviewCommitAndReload(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	opt := cleanupOptions{MessageDays: 90, DeliveryDays: 30}
+	opt := cleanupOptions{NotificationDays: 90, DeliveryDays: 30}
 	preview, err := a.db.previewCleanup(opt, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if preview.Messages != 2 || preview.UnreadMessages != 0 || preview.Deliveries != 1 || preview.Invites != 1 || preview.Idempotency != 1 || preview.LongTextBytes != int64(len(strings.Repeat("details", 100))) {
+	if preview.Notifications != 2 || preview.UnreadNotifications != 0 || preview.Deliveries != 1 || preview.Invites != 1 || preview.Idempotency != 1 || preview.LongTextBytes != int64(len(strings.Repeat("details", 100))) {
 		t.Fatalf("wrong preview: %+v", preview)
 	}
-	if len(a.db.snapshot().Messages["alice"]) != 4 {
+	if len(a.db.snapshot().Notifications["alice"]) != 4 {
 		t.Fatal("preview mutated live DB")
 	}
 	executed, err := a.db.runCleanup(opt, now)
@@ -54,14 +54,14 @@ func TestStorageCleanupPreviewCommitAndReload(t *testing.T) {
 		t.Fatalf("preview mismatch: %+v vs %+v", preview, executed)
 	}
 	after := a.db.snapshot()
-	if len(after.Messages["alice"]) != 3 || len(after.Messages["bob"]) != 0 || len(after.Deliveries) != 2 || after.Deliveries["active"] == nil || after.Invites["valid"] == nil || after.Idempotency["valid"].CreatedAt.IsZero() {
+	if len(after.Notifications["alice"]) != 3 || len(after.Notifications["bob"]) != 0 || len(after.Deliveries) != 2 || after.Deliveries["active"] == nil || after.Invites["valid"] == nil || after.Idempotency["valid"].CreatedAt.IsZero() {
 		t.Fatal("cleanup deleted protected state or failed to delete old records")
 	}
 	stats, err := a.db.storageStats()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.Users != 2 || stats.Messages != 3 || stats.UnreadMessages != 1 || stats.Deliveries != 2 || stats.Integrity != "ok" {
+	if stats.Users != 2 || stats.Notifications != 3 || stats.UnreadNotifications != 1 || stats.Deliveries != 2 || stats.Integrity != "ok" {
 		t.Fatalf("wrong stats: %+v", stats)
 	}
 	reopened, err := openStore(a.db.path)
@@ -69,7 +69,7 @@ func TestStorageCleanupPreviewCommitAndReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reopened.Close()
-	if len(reopened.snapshot().Messages["alice"]) != 3 || len(reopened.snapshot().Deliveries) != 2 {
+	if len(reopened.snapshot().Notifications["alice"]) != 3 || len(reopened.snapshot().Deliveries) != 2 {
 		t.Fatal("cleanup not persisted across restart")
 	}
 	// An explicit opt-in may delete unread, but a running job still blocks old inbox removal.
@@ -78,7 +78,7 @@ func TestStorageCleanupPreviewCommitAndReload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if more.Messages != 1 || more.UnreadMessages != 1 {
+	if more.Notifications != 1 || more.UnreadNotifications != 1 {
 		t.Fatalf("unexpected unread cleanup: %+v", more)
 	}
 }
@@ -103,11 +103,11 @@ func TestStorageAdminAuthorizationValidationAndVacuum(t *testing.T) {
 			t.Errorf("anonymous %s returned %d", path, r.Code)
 		}
 	}
-	opt := cleanupOptions{MessageDays: 90, DeliveryDays: 30}
+	opt := cleanupOptions{NotificationDays: 90, DeliveryDays: 30}
 	if r := request(t, h, "POST", "/api/admin/storage/preview", opt, "", "", adminCookie); r.Code != 403 {
 		t.Fatalf("CSRF: %d", r.Code)
 	}
-	if r := request(t, h, "POST", "/api/admin/storage/preview", cleanupOptions{MessageDays: -10, DeliveryDays: 30}, a.cfg.origin, "", adminCookie); r.Code != 400 {
+	if r := request(t, h, "POST", "/api/admin/storage/preview", cleanupOptions{NotificationDays: -10, DeliveryDays: 30}, a.cfg.origin, "", adminCookie); r.Code != 400 {
 		t.Fatalf("bad days: %d", r.Code)
 	}
 	if r := request(t, h, "POST", "/api/admin/storage/cleanup", opt, a.cfg.origin, "", adminCookie); r.Code != 400 {
@@ -124,7 +124,7 @@ func TestStorageAdminAuthorizationValidationAndVacuum(t *testing.T) {
 			t.Fatalf("bad stats: %+v %v", stats, err)
 		}
 	}
-	if r := request(t, h, "POST", "/api/admin/storage/cleanup", cleanupOptions{MessageDays: 90, DeliveryDays: 30, Confirm: "LÖSCHEN"}, a.cfg.origin, "", adminCookie); r.Code != 200 {
+	if r := request(t, h, "POST", "/api/admin/storage/cleanup", cleanupOptions{NotificationDays: 90, DeliveryDays: 30, Confirm: "LÖSCHEN"}, a.cfg.origin, "", adminCookie); r.Code != 200 {
 		t.Fatalf("cleanup failed: %d %s", r.Code, r.Body.String())
 	}
 	if r := request(t, h, "POST", "/api/admin/storage/compact", map[string]string{"confirm": "OPTIMIEREN"}, a.cfg.origin, "", adminCookie); r.Code != 200 {

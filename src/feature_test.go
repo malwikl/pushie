@@ -85,44 +85,61 @@ func TestWebAdminAndInboxIsolation(t *testing.T) {
 	if r.Code != 200 || !bytes.Contains(r.Body.Bytes(), []byte(`"inboxUsers":2`)) {
 		t.Fatalf("admin send: %d %s", r.Code, r.Body.String())
 	}
+	const unreadPath = "/api/me/notifications/unread"
+	if r := request(t, h, "GET", unreadPath, nil, "", "", ""); r.Code != 401 {
+		t.Fatalf("unauthenticated unread count: %d", r.Code)
+	}
+	checkUnread := func(cookie string, count int) {
+		t.Helper()
+		r := request(t, h, "GET", unreadPath, nil, "", "", cookie)
+		var unread map[string]int
+		err := json.Unmarshal(r.Body.Bytes(), &unread)
+		actual, ok := unread["unread"]
+		if r.Code != 200 || err != nil || len(unread) != 1 || !ok || actual != count {
+			t.Fatalf("unread count: wanted %d, got %d %s", count, r.Code, r.Body.String())
+		}
+	}
 	for _, tc := range []struct {
 		user, cookie string
 		count        int
 	}{{"alice", adminCookie, 1}, {"bob", bobCookie, 1}, {"carol", carolCookie, 0}} {
-		rr := request(t, h, "GET", "/api/me/messages", nil, "", "", tc.cookie)
+		rr := request(t, h, "GET", "/api/me/notifications", nil, "", "", tc.cookie)
 		if rr.Code != 200 {
 			t.Fatalf("inbox %s: %d", tc.user, rr.Code)
 		}
 		var v struct {
-			Messages []inboxMessage `json:"messages"`
-			Unread   int            `json:"unread"`
+			Notifications []inboxNotification `json:"notifications"`
+			Unread        int                 `json:"unread"`
 		}
 		if err := json.Unmarshal(rr.Body.Bytes(), &v); err != nil {
 			t.Fatal(err)
 		}
-		if len(v.Messages) != tc.count || v.Unread != tc.count {
-			t.Fatalf("inbox %s: %d vs %d", tc.user, len(v.Messages), tc.count)
+		if len(v.Notifications) != tc.count || v.Unread != tc.count {
+			t.Fatalf("inbox %s: %d vs %d", tc.user, len(v.Notifications), tc.count)
 		}
+		checkUnread(tc.cookie, tc.count)
 	}
-	inbox := a.db.snapshot().Messages["bob"]
+	inbox := a.db.snapshot().Notifications["bob"]
 	id := inbox[0].ID
-	if r := request(t, h, "PUT", fmt.Sprintf("/api/me/messages/%s/read", id), map[string]string{}, a.cfg.origin, "", carolCookie); r.Code != 404 {
+	if r := request(t, h, "PUT", fmt.Sprintf("/api/me/notifications/%s/read", id), map[string]string{}, a.cfg.origin, "", carolCookie); r.Code != 404 {
 		t.Fatalf("cross-account read: %d", r.Code)
 	}
-	if r := request(t, h, "PUT", fmt.Sprintf("/api/me/messages/%s/read", id), map[string]string{}, a.cfg.origin, "", bobCookie); r.Code != 200 {
-		t.Fatalf("read own message: %d", r.Code)
+	if r := request(t, h, "PUT", fmt.Sprintf("/api/me/notifications/%s/read", id), map[string]string{}, a.cfg.origin, "", bobCookie); r.Code != 200 {
+		t.Fatalf("read own notification: %d", r.Code)
 	}
-	if r := request(t, h, "DELETE", fmt.Sprintf("/api/me/messages/%s", id), nil, a.cfg.origin, "", carolCookie); r.Code != 404 {
+	checkUnread(bobCookie, 0)
+	checkUnread(adminCookie, 1)
+	if r := request(t, h, "DELETE", fmt.Sprintf("/api/me/notifications/%s", id), nil, a.cfg.origin, "", carolCookie); r.Code != 404 {
 		t.Fatalf("cross-account delete: %d", r.Code)
 	}
-	if r := request(t, h, "POST", "/api/me/messages/read-all", map[string]string{}, a.cfg.origin, "", adminCookie); r.Code != 200 {
+	if r := request(t, h, "POST", "/api/me/notifications/read-all", map[string]string{}, a.cfg.origin, "", adminCookie); r.Code != 200 {
 		t.Fatalf("read-all: %d", r.Code)
 	}
 	reloaded, err := openStore(a.db.path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reloaded.snapshot().Messages["alice"][0].ReadAt == nil || reloaded.snapshot().Messages["bob"][0].ReadAt == nil {
+	if reloaded.snapshot().Notifications["alice"][0].ReadAt == nil || reloaded.snapshot().Notifications["bob"][0].ReadAt == nil {
 		t.Fatal("read receipt not persisted")
 	}
 }
@@ -134,18 +151,18 @@ func TestExternalAPIWithNoPushDeviceAndRetention(t *testing.T) {
 	if r.Code != 200 || !bytes.Contains(r.Body.Bytes(), []byte(`"inboxUsers":1`)) {
 		t.Fatalf("external send: %d %s", r.Code, r.Body.String())
 	}
-	if !strings.Contains(a.db.snapshot().Messages["target"][0].Body, "External") {
-		t.Fatal("message missing")
+	if !strings.Contains(a.db.snapshot().Notifications["target"][0].Body, "External") {
+		t.Fatal("notification missing")
 	}
 	if r := request(t, h, "POST", "/api/send", map[string]string{"userId": "target", "body": "Hello"}, "https://evil.example", a.cfg.sendToken, ""); r.Code != 403 {
 		t.Fatalf("browser Origin accepted for token API: %d", r.Code)
 	}
 	if err := a.db.update(func(d *database) error {
-		list := d.Messages["target"]
-		for len(list) < maxInboxMessages {
-			list = append(list, inboxMessage{ID: fmt.Sprintf("%d", len(list)), Title: "X", CreatedAt: time.Now()})
+		list := d.Notifications["target"]
+		for len(list) < maxInboxNotifications {
+			list = append(list, inboxNotification{ID: fmt.Sprintf("%d", len(list)), Title: "X", CreatedAt: time.Now()})
 		}
-		d.Messages["target"] = list
+		d.Notifications["target"] = list
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -154,8 +171,8 @@ func TestExternalAPIWithNoPushDeviceAndRetention(t *testing.T) {
 	if r.Code != 200 {
 		t.Fatalf("retention trigger: %d", r.Code)
 	}
-	msgs := a.db.snapshot().Messages["target"]
-	if len(msgs) != maxInboxMessages || msgs[0].ID == "0" || msgs[len(msgs)-1].Body != "newest" {
+	msgs := a.db.snapshot().Notifications["target"]
+	if len(msgs) != maxInboxNotifications || msgs[0].ID == "0" || msgs[len(msgs)-1].Body != "newest" {
 		t.Fatalf("retention not applied: %d", len(msgs))
 	}
 }

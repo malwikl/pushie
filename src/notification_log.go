@@ -19,7 +19,7 @@ type logTarget struct {
 	DeviceIDs []string `json:"deviceIds,omitempty"`
 	Broadcast bool     `json:"broadcast,omitempty"`
 }
-type messageLogRecord struct {
+type notificationLogRecord struct {
 	Notification notification   `json:"notification"`
 	CreatedAt    time.Time      `json:"createdAt"`
 	Sender       logParty       `json:"sender"`
@@ -31,17 +31,17 @@ type messageLogRecord struct {
 }
 
 // Historical records contain only information that is still available locally.
-func backfillMessageLog(db *database) {
-	for uid, list := range db.Messages {
+func backfillNotificationLog(db *database) {
+	for uid, list := range db.Notifications {
 		for _, m := range list {
-			rec := db.MessageLog[m.ID]
+			rec := db.NotificationLog[m.ID]
 			if rec == nil {
 				sender := logParty{ID: m.SenderUserID, Name: "Unknown (historical)"}
 				if u := db.Users[m.SenderUserID]; u != nil {
 					sender.Name = u.Name
 				}
-				rec = &messageLogRecord{Notification: notification{ID: m.ID, Title: m.Title, Body: m.Body, LongText: m.LongText, Topic: m.Topic, Tag: m.Tag}, CreatedAt: m.CreatedAt, Sender: sender, Source: "historical", Target: logTarget{Topic: m.Topic}, Recovered: true}
-				db.MessageLog[m.ID] = rec
+				rec = &notificationLogRecord{Notification: notification{ID: m.ID, Title: m.Title, Body: m.Body, LongText: m.LongText, Topic: m.Topic, Tag: m.Tag}, CreatedAt: m.CreatedAt, Sender: sender, Source: "historical", Target: logTarget{Topic: m.Topic}, Recovered: true}
+				db.NotificationLog[m.ID] = rec
 			}
 			if u := db.Users[uid]; u != nil {
 				rec.Recipients = append(rec.Recipients, logParty{ID: uid, Name: u.Name})
@@ -49,14 +49,14 @@ func backfillMessageLog(db *database) {
 		}
 	}
 	for _, d := range db.Deliveries {
-		rec := db.MessageLog[d.MessageID]
+		rec := db.NotificationLog[d.NotificationID]
 		if rec == nil {
-			rec = &messageLogRecord{Notification: d.Content, CreatedAt: d.CreatedAt, Sender: logParty{ID: d.SenderUserID, Name: "Unknown (historical)"}, Source: "historical", Recovered: true}
-			rec.Notification.ID = d.MessageID
+			rec = &notificationLogRecord{Notification: d.Content, CreatedAt: d.CreatedAt, Sender: logParty{ID: d.SenderUserID, Name: "Unknown (historical)"}, Source: "historical", Recovered: true}
+			rec.Notification.ID = d.NotificationID
 			if u := db.Users[d.SenderUserID]; u != nil {
 				rec.Sender.Name = u.Name
 			}
-			db.MessageLog[d.MessageID] = rec
+			db.NotificationLog[d.NotificationID] = rec
 		}
 		found := false
 		for _, p := range rec.Recipients {
@@ -72,15 +72,15 @@ func backfillMessageLog(db *database) {
 			rec.Recipients = append(rec.Recipients, p)
 		}
 	}
-	refreshMessageLog(db)
+	refreshNotificationLog(db)
 }
 
-func refreshMessageLog(db *database) {
-	if db.MessageLogDisabled {
+func refreshNotificationLog(db *database) {
+	if db.NotificationLogDisabled {
 		return
 	}
 	for _, d := range db.Deliveries {
-		if rec := db.MessageLog[d.MessageID]; rec != nil {
+		if rec := db.NotificationLog[d.NotificationID]; rec != nil {
 			v := viewDelivery(d)
 			found := false
 			for i, old := range rec.Deliveries {
@@ -97,7 +97,7 @@ func refreshMessageLog(db *database) {
 	}
 }
 
-func (a *application) messageLogRoutes(mux *http.ServeMux) {
+func (a *application) notificationLogRoutes(mux *http.ServeMux) {
 	guard := func(next func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
 		return a.requireUser(func(w http.ResponseWriter, r *http.Request, u *user) {
 			if !u.isAdmin() {
@@ -107,10 +107,10 @@ func (a *application) messageLogRoutes(mux *http.ServeMux) {
 			next(w, r)
 		})
 	}
-	mux.HandleFunc("GET /api/admin/message-log/settings", guard(func(w http.ResponseWriter, r *http.Request) {
-		reply(w, 200, map[string]bool{"enabled": !a.db.snapshot().MessageLogDisabled})
+	mux.HandleFunc("GET /api/admin/notification-log/settings", guard(func(w http.ResponseWriter, r *http.Request) {
+		reply(w, 200, map[string]bool{"enabled": !a.db.snapshot().NotificationLogDisabled})
 	}))
-	mux.HandleFunc("PUT /api/admin/message-log/settings", guard(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("PUT /api/admin/notification-log/settings", guard(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Enabled *bool `json:"enabled"`
 		}
@@ -121,7 +121,7 @@ func (a *application) messageLogRoutes(mux *http.ServeMux) {
 			failure(w, 400, "enabled erforderlich")
 			return
 		}
-		if err := a.db.update(func(db *database) error { db.MessageLogDisabled = !*req.Enabled; return nil }); err != nil {
+		if err := a.db.update(func(db *database) error { db.NotificationLogDisabled = !*req.Enabled; return nil }); err != nil {
 			failure(w, 500, "Einstellung konnte nicht gespeichert werden")
 			return
 		}
@@ -142,16 +142,16 @@ func (a *application) messageLogRoutes(mux *http.ServeMux) {
 		cutoff := time.Now().UTC().Add(-time.Duration(req.Days) * 24 * time.Hour)
 		count := 0
 		clean := func(db *database, remove bool) {
-			for id, rec := range db.MessageLog {
+			for id, rec := range db.NotificationLog {
 				if req.Days == 0 || rec.CreatedAt.Before(cutoff) {
 					count++
 					if remove {
-						delete(db.MessageLog, id)
+						delete(db.NotificationLog, id)
 					}
 				}
 			}
 		}
-		if r.URL.Path == "/api/admin/message-log/cleanup" {
+		if r.URL.Path == "/api/admin/notification-log/cleanup" {
 			if req.Confirm != "LÖSCHEN" {
 				failure(w, 400, "Löschbestätigung erforderlich")
 				return
@@ -166,18 +166,18 @@ func (a *application) messageLogRoutes(mux *http.ServeMux) {
 		}
 		reply(w, 200, map[string]int{"entries": count})
 	})
-	mux.HandleFunc("POST /api/admin/message-log/cleanup-preview", cleanup)
-	mux.HandleFunc("POST /api/admin/message-log/cleanup", cleanup)
-	mux.HandleFunc("GET /api/admin/message-log/{id}", guard(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/admin/notification-log/cleanup-preview", cleanup)
+	mux.HandleFunc("POST /api/admin/notification-log/cleanup", cleanup)
+	mux.HandleFunc("GET /api/admin/notification-log/{id}", guard(func(w http.ResponseWriter, r *http.Request) {
 		snap := a.db.snapshot()
-		record := snap.MessageLog[r.PathValue("id")]
+		record := snap.NotificationLog[r.PathValue("id")]
 		if record == nil {
-			failure(w, 404, "Nachricht nicht gefunden")
+			failure(w, 404, "Mitteilung nicht gefunden")
 			return
 		}
 		reply(w, 200, record)
 	}))
-	mux.HandleFunc("GET /api/admin/message-log", guard(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/admin/notification-log", guard(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		from, to := q.Get("from"), q.Get("to")
 		for _, date := range []string{from, to} {
@@ -193,11 +193,11 @@ func (a *application) messageLogRoutes(mux *http.ServeMux) {
 			offset = 0
 		}
 		snap := a.db.snapshot()
-		out := make([]messageLogRecord, 0)
+		out := make([]notificationLogRecord, 0)
 		matches := func(value, filter string) bool {
 			return strings.Contains(strings.ToLower(value), strings.ToLower(filter))
 		}
-		for _, rec := range snap.MessageLog {
+		for _, rec := range snap.NotificationLog {
 			date := rec.CreatedAt.UTC().Format("2006-01-02")
 			if from != "" && date < from || to != "" && date > to {
 				continue
@@ -247,6 +247,6 @@ func (a *application) messageLogRoutes(mux *http.ServeMux) {
 		if end > total {
 			end = total
 		}
-		reply(w, 200, map[string]any{"messages": out[offset:end], "total": total, "offset": offset})
+		reply(w, 200, map[string]any{"notifications": out[offset:end], "total": total, "offset": offset})
 	}))
 }

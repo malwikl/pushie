@@ -42,7 +42,7 @@ func TestRequestLogsRedactSecretsAndReportAuthorization(t *testing.T) {
 		t.Fatal("credential leaked")
 	}
 	output.Reset()
-	r = httptest.NewRequest("DELETE", "/api/me/messages/private-id", nil)
+	r = httptest.NewRequest("DELETE", "/api/me/notifications/private-id", nil)
 	w = httptest.NewRecorder()
 	a.routes().ServeHTTP(w, r)
 	if !strings.Contains(output.String(), `"result":"unauthenticated"`) || strings.Contains(output.String(), "private-id") {

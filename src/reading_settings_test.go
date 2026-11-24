@@ -61,22 +61,22 @@ func TestBroadcastReasonSurvivesSentHistoryReconstruction(t *testing.T) {
 	if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &result) != nil {
 		t.Fatalf("send: %d %s", r.Code, r.Body.String())
 	}
-	for _, messages := range a.db.snapshot().Messages {
-		for _, m := range messages {
-			if m.ID == result.MessageID && m.DeliveryReason != "broadcast" {
+	for _, notifications := range a.db.snapshot().Notifications {
+		for _, m := range notifications {
+			if m.ID == result.NotificationID && m.DeliveryReason != "broadcast" {
 				t.Fatalf("missing reason: %+v", m)
 			}
 		}
 	}
 	if err := a.db.update(func(db *database) error {
-		for uid := range db.Messages {
-			db.Messages[uid] = nil
+		for uid := range db.Notifications {
+			db.Notifications[uid] = nil
 		}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	r = request(t, a.routes(), "GET", "/api/me/sent-messages", nil, "", "", cookie)
+	r = request(t, a.routes(), "GET", "/api/me/sent-notifications", nil, "", "", cookie)
 	if r.Code != 200 || !bytes.Contains(r.Body.Bytes(), []byte(`"deliveryReason":"broadcast"`)) {
 		t.Fatalf("lost broadcast reason: %d %s", r.Code, r.Body.String())
 	}
@@ -88,25 +88,62 @@ func TestReadAllSeparatesBroadcastAndDirect(t *testing.T) {
 			a := testApp(t)
 			addTestUser(t, a, "alice", "", nil)
 			if err := a.db.update(func(db *database) error {
-				db.Messages["alice"] = []inboxMessage{{ID: "direct"}, {ID: "broadcast", DeliveryReason: "broadcast"}, {ID: "topic", Topic: "backup"}}
+				db.Notifications["alice"] = []inboxNotification{{ID: "direct"}, {ID: "broadcast", DeliveryReason: "broadcast"}, {ID: "topic", Topic: "backup"}}
 				return nil
 			}); err != nil {
 				t.Fatal(err)
 			}
 			cookie := signIn(t, a, "alice")
-			r := request(t, a.routes(), "POST", "/api/me/messages/read-all", map[string]string{"deliveryReason": reason}, a.cfg.origin, "", cookie)
+			r := request(t, a.routes(), "POST", "/api/me/notifications/read-all", map[string]string{"deliveryReason": reason}, a.cfg.origin, "", cookie)
 			if r.Code != 200 {
 				t.Fatalf("mark read: %d %s", r.Code, r.Body.String())
 			}
-			for _, m := range a.db.snapshot().Messages["alice"] {
+			for _, m := range a.db.snapshot().Notifications["alice"] {
 				if (m.ReadAt != nil) != (m.ID == reason) {
 					t.Fatalf("wrong read state: %+v", m)
 				}
 			}
-			r = request(t, a.routes(), "POST", "/api/me/messages/read-all", map[string]string{"deliveryReason": "unknown"}, a.cfg.origin, "", cookie)
+			r = request(t, a.routes(), "POST", "/api/me/notifications/read-all", map[string]string{"deliveryReason": "unknown"}, a.cfg.origin, "", cookie)
 			if r.Code != 400 {
 				t.Fatalf("invalid reason accepted: %d", r.Code)
 			}
 		})
+	}
+}
+
+func TestReadAllMarksOnlySelectedNotificationsInCurrentInbox(t *testing.T) {
+	a := testApp(t)
+	addTestUser(t, a, "alice", "", nil)
+	addTestUser(t, a, "bob", "", nil)
+	if err := a.db.update(func(db *database) error {
+		db.Notifications["alice"] = []inboxNotification{{ID: "shown", Topic: "backup"}, {ID: "arrived-later", Topic: "backup"}, {ID: "hidden", Topic: "system"}}
+		db.Notifications["bob"] = []inboxNotification{{ID: "shown", Topic: "backup"}, {ID: "other-account"}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h := a.routes()
+	cookie := signIn(t, a, "alice")
+	const path = "/api/me/notifications/read-all"
+	for _, body := range []map[string]any{
+		{"ids": nil},
+		{"ids": []string{}},
+		{"ids": []string{"shown"}, "topic": "backup"},
+	} {
+		if r := request(t, h, "POST", path, body, a.cfg.origin, "", cookie); r.Code != 400 {
+			t.Fatalf("invalid selection accepted: %d %s", r.Code, r.Body.String())
+		}
+	}
+	r := request(t, h, "POST", path, map[string]any{"ids": []string{"shown", "other-account"}}, a.cfg.origin, "", cookie)
+	if r.Code != 200 {
+		t.Fatalf("mark selected read: %d %s", r.Code, r.Body.String())
+	}
+	for uid, notifications := range a.db.snapshot().Notifications {
+		for _, n := range notifications {
+			wantRead := uid == "alice" && n.ID == "shown"
+			if (n.ReadAt != nil) != wantRead {
+				t.Errorf("wrong read state for %s/%s: %v", uid, n.ID, n.ReadAt)
+			}
+		}
 	}
 }

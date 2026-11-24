@@ -12,7 +12,7 @@ func TestBuildVersionMatchesHTMLAssetsAndAPI(t *testing.T) {
 	buildVersion = "20261108194830123456"
 	t.Cleanup(func() { buildVersion = previous })
 	h := testApp(t).routes()
-	for _, path := range []string{"/", "/?message=one&_build=old", "/index.html", "/admin"} {
+	for _, path := range []string{"/", "/?notification=one&_build=old", "/index.html", "/admin"} {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
 		body := w.Body.String()
@@ -38,7 +38,7 @@ func TestBuildVersionMatchesHTMLAssetsAndAPI(t *testing.T) {
 
 func TestExpiredSessionClearsCookieAndRequestsCacheClearing(t *testing.T) {
 	a := testApp(t)
-	r := httptest.NewRequest("GET", "/api/me/messages", nil)
+	r := httptest.NewRequest("GET", "/api/me/notifications", nil)
 	r.Header.Set("Cookie", a.cookieName()+"=expired")
 	w := httptest.NewRecorder()
 	a.routes().ServeHTTP(w, r)

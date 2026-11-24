@@ -16,6 +16,7 @@ import (
 )
 
 type user struct {
+	TopicMutes         map[string]time.Time  `json:"topicMutes,omitempty"`
 	ManualRead         bool                  `json:"manualRead,omitempty"`
 	OnboardingComplete bool                  `json:"onboardingComplete,omitempty"`
 	APIKeys            []personalAPIKey      `json:"apiKeys,omitempty"`
@@ -36,7 +37,7 @@ func (u *user) WebAuthnCredentials() []webauthn.Credential { return u.Credential
 
 func (u *user) isAdmin() bool { return u != nil && u.Role == "admin" }
 
-type inboxMessage struct {
+type inboxNotification struct {
 	DeliveryReason string     `json:"deliveryReason,omitempty"`
 	SentDeleted    bool       `json:"sentDeleted,omitempty"` // Hide sender history without removing recipient data or delivery jobs.
 	SenderUserID   string     `json:"senderUserId,omitempty"`
@@ -50,17 +51,18 @@ type inboxMessage struct {
 	ReadAt         *time.Time `json:"readAt,omitempty"`
 }
 
-func messageWithReason(db *database, message inboxMessage) inboxMessage {
-	// Recover the reason for messages created before it was stored explicitly.
-	if message.Topic == "" && message.DeliveryReason == "" {
-		if record := db.MessageLog[message.ID]; record != nil && record.Target.Broadcast {
-			message.DeliveryReason = "broadcast"
+func notificationWithReason(db *database, notification inboxNotification) inboxNotification {
+	// Recover the reason for notifications created before it was stored explicitly.
+	if notification.Topic == "" && notification.DeliveryReason == "" {
+		if record := db.NotificationLog[notification.ID]; record != nil && record.Target.Broadcast {
+			notification.DeliveryReason = "broadcast"
 		}
 	}
-	return message
+	return notification
 }
 
 type device struct {
+	LastActivityAt *time.Time `json:"lastActivityAt,omitempty"`
 	// nil follows account subscriptions; an empty list disables topic pushes.
 	// Keep empty lists in JSON so this distinction survives storage and snapshots.
 	Topics       []string             `json:"topics"`
@@ -92,17 +94,17 @@ type idempotencyRecord struct {
 }
 
 type database struct {
-	MessageLogDisabled bool                         `json:"messageLogDisabled,omitempty"`
-	MessageLog         map[string]*messageLogRecord `json:"messageLog,omitempty"`
-	IntegrationKeys    []personalAPIKey             `json:"integrationKeys,omitempty"`
-	Users              map[string]*user             `json:"users"`
-	Devices            map[string]*device           `json:"devices"`
-	Topics             map[string]*topic            `json:"topics"`
-	Invites            map[string]*invitation       `json:"invites"` // SHA-256 of bearer invitation, never plaintext
-	Messages           map[string][]inboxMessage    `json:"messages"`
-	Deliveries         map[string]*delivery         `json:"deliveries,omitempty"`
-	Idempotency        map[string]idempotencyRecord `json:"idempotency,omitempty"`
-	BootstrapUsed      bool                         `json:"bootstrapUsed"`
+	NotificationLogDisabled bool                              `json:"notificationLogDisabled,omitempty"`
+	NotificationLog         map[string]*notificationLogRecord `json:"notificationLog,omitempty"`
+	IntegrationKeys         []personalAPIKey                  `json:"integrationKeys,omitempty"`
+	Users                   map[string]*user                  `json:"users"`
+	Devices                 map[string]*device                `json:"devices"`
+	Topics                  map[string]*topic                 `json:"topics"`
+	Invites                 map[string]*invitation            `json:"invites"` // SHA-256 of bearer invitation, never plaintext
+	Notifications           map[string][]inboxNotification    `json:"notifications"`
+	Deliveries              map[string]*delivery              `json:"deliveries,omitempty"`
+	Idempotency             map[string]idempotencyRecord      `json:"idempotency,omitempty"`
+	BootstrapUsed           bool                              `json:"bootstrapUsed"`
 }
 
 type store struct {
@@ -114,8 +116,8 @@ type store struct {
 }
 
 func (d *database) initialize() {
-	if d.MessageLog == nil {
-		d.MessageLog = make(map[string]*messageLogRecord)
+	if d.NotificationLog == nil {
+		d.NotificationLog = make(map[string]*notificationLogRecord)
 	}
 	if d.Users == nil {
 		d.Users = make(map[string]*user)
@@ -129,8 +131,8 @@ func (d *database) initialize() {
 	if d.Invites == nil {
 		d.Invites = make(map[string]*invitation)
 	}
-	if d.Messages == nil {
-		d.Messages = make(map[string][]inboxMessage)
+	if d.Notifications == nil {
+		d.Notifications = make(map[string][]inboxNotification)
 	}
 	if d.Deliveries == nil {
 		d.Deliveries = make(map[string]*delivery)
@@ -196,6 +198,7 @@ func (s *store) devicesFor(topicName, userID, deviceID string) []device {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	result := []device{}
+	now := time.Now()
 	for _, dev := range s.db.Devices {
 		u := s.db.Users[dev.UserID]
 		if u == nil {
@@ -207,7 +210,7 @@ func (s *store) devicesFor(topicName, userID, deviceID string) []device {
 		if userID != "" && dev.UserID != userID {
 			continue
 		}
-		if topicName != "" && (!hasString(u.Topics, topicName) || !dev.receivesTopic(topicName)) {
+		if topicName != "" && (!hasString(u.Topics, topicName) || !dev.receivesTopic(topicName) || u.topicMuted(topicName, now)) {
 			continue
 		}
 		result = append(result, *dev)
@@ -269,7 +272,23 @@ func (s *store) registerBootstrapAdmin(account *user) error {
 	})
 }
 
-// Read only the requesting account's data; unrelated messages, credentials,
+func countUnreadNotifications(notifications []inboxNotification) int {
+	count := 0
+	for _, notification := range notifications {
+		if notification.ReadAt == nil {
+			count++
+		}
+	}
+	return count
+}
+
+func (s *store) unreadNotifications(userID string) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return countUnreadNotifications(s.db.Notifications[userID])
+}
+
+// Read only the requesting account's data; unrelated notifications, credentials,
 // endpoints, and receipt secrets are never copied into user handlers.
 func (s *store) userSnapshot(userID string, inbox bool) database {
 	s.mu.RLock()
@@ -277,11 +296,11 @@ func (s *store) userSnapshot(userID string, inbox bool) database {
 	var out database
 	out.initialize()
 	if inbox {
-		messages := make([]inboxMessage, len(s.db.Messages[userID]))
-		for i, message := range s.db.Messages[userID] {
-			messages[i] = messageWithReason(&s.db, message)
+		notifications := make([]inboxNotification, len(s.db.Notifications[userID]))
+		for i, notification := range s.db.Notifications[userID] {
+			notifications[i] = notificationWithReason(&s.db, notification)
 		}
-		out.Messages[userID] = messages
+		out.Notifications[userID] = notifications
 		for id, d := range s.db.Deliveries {
 			if d.UserID == userID {
 				copy := *d

@@ -10,15 +10,15 @@ async function click(clients,data={id:'one'},tag='',cache){
  handlers.notificationclick({notification:{data,tag,close(){closed=true}},waitUntil(task){pending=task}});
  await pending;assert.equal(closed,true);
 }
-test('existing app is navigated, focused and receives the message target',async()=>{
- const events=[];const existing={url:'https://push.example.com/?lang=en',async navigate(url){events.push(['navigate',url]);return this},async focus(){events.push(['focus'])},postMessage(message){events.push(['message',message.id])}};
+test('existing app is navigated, focused and receives the notification target',async()=>{
+ const events=[];const existing={url:'https://push.example.com/?lang=en',async navigate(url){events.push(['navigate',url]);return this},async focus(){events.push(['focus'])},postMessage(notification){events.push(['message',notification.id])}};
  await click({matchAll:async()=>[existing],openWindow(){assert.fail('must reuse existing app')}},{id:'a/b'});
- assert.match(events[0][1],/message=a%2Fb/);assert.match(events[0][1],/#message-a%2Fb$/);assert.equal(events[1][0],'focus');assert.deepEqual(events[2],['message','a/b']);
+ assert.match(events[0][1],/notification=a%2Fb/);assert.match(events[0][1],/#notification-a%2Fb$/);assert.equal(events[1][0],'focus');assert.deepEqual(events[2],['message','a/b']);
 });
 test('cold launch opens durable query link and falls back to notification tag',async()=>{
  let target;
  await click({matchAll:async()=>[],openWindow:async url=>{target=url;return null}},{},'tag-id');
- assert.equal(new URL(target).searchParams.get('message'),'tag-id');
+ assert.equal(new URL(target).searchParams.get('notification'),'tag-id');
 });
 test('failed existing-window navigation falls back to a new window',async()=>{
  let opened=false;
@@ -30,8 +30,8 @@ test('click target is persisted before iOS opens the app without returning a cli
  let saved;
  const cache={async put(key,response){saved={key,...await response.json()}}};
  await click({matchAll:async()=>[],openWindow:async()=>{
-  assert.equal(saved.id,'ios-message');return null;
- }},{id:'ios-message'},'',cache);
+  assert.equal(saved.id,'ios-notification');return null;
+ }},{id:'ios-notification'},'',cache);
  assert.equal(saved.key,'/__notification_target');assert.ok(saved.createdAt);
 });
 
@@ -42,28 +42,68 @@ test('displaying a push preserves native navigation and browser acknowledgement'
   registration:{showNotification:async(title,options)=>{shown={title,...options}}},
   addEventListener:(name,fn)=>{handlers[name]=fn}
  }});
- const navigate='https://push.example.com/?message=one';
+ const navigate='https://push.example.com/?notification=one';
  handlers.push({data:{json:()=>({id:'one',deviceId:'device',receiptSecret:'receipt',notification:{title:'Native',body:'Body',navigate}})},waitUntil(task){pending=task}});
  await pending;
  assert.equal(shown.navigate,navigate);assert.equal(shown.title,'Native');assert.equal(shown.body,'Body');
- assert.equal(shown.data.id,'one');assert.equal(ack.body.messageId,'one');
+ assert.equal(shown.data.id,'one');assert.equal(ack.body.notificationId,'one');
+});
+
+test('push refreshes app windows and sets the current icon count in the background',async()=>{
+ const handlers={},messages=[],counts=[],requests=[];let pending,shown=0,unread=3;
+ const app={url:'https://push.example.com/?lang=en',visibilityState:'hidden',postMessage:data=>messages.push(data.type)};
+ const other={url:'https://push.example.com/icon.svg',postMessage:()=>messages.push('wrong window')};
+ let windows=[app,other];
+ vm.runInNewContext(source,{
+  URL,clients:{matchAll:async()=>windows},
+  fetch:async(url,options)=>{requests.push([url,options.credentials,options.cache]);return {ok:true,json:async()=>({unread})}},
+  self:{location:{origin:'https://push.example.com'},navigator:{setAppBadge:async count=>counts.push(count)},
+   registration:{showNotification:async()=>{shown++}},addEventListener:(name,fn)=>{handlers[name]=fn}}
+ });
+ async function push(){handlers.push({data:{json:()=>({id:'one'})},waitUntil(task){pending=task}});await pending}
+ await push();await push();
+ app.visibilityState='visible';await push();
+ assert.deepEqual(counts,[3,3]);assert.equal(requests.length,2);
+ windows=[];unread=0;await push();
+ assert.deepEqual(counts,[3,3,0]);
+ assert.deepEqual(requests,Array(3).fill(['/api/me/notifications/unread','same-origin','no-store']));
+ assert.equal(shown,4);assert.deepEqual(messages,Array(3).fill('inbox-changed'));
+});
+
+test('a delayed background response yields to a newer push or a visible app window',async()=>{
+ const handlers={},counts=[],responses=[];let windows=[];
+ vm.runInNewContext(source,{
+  URL,clients:{matchAll:async()=>windows},fetch:()=>new Promise(resolve=>responses.push(resolve)),
+  self:{location:{origin:'https://push.example.com'},navigator:{setAppBadge:async count=>counts.push(count)},
+   registration:{showNotification:async()=>{}},addEventListener:(name,fn)=>{handlers[name]=fn}}
+ });
+ function push(){let pending;handlers.push({waitUntil(task){pending=task}});return pending}
+ const flush=()=>new Promise(resolve=>setImmediate(resolve));
+ const response=unread=>({ok:true,json:async()=>({unread})});
+ const first=push(),second=push();await flush();
+ responses[1](response(2));await second;
+ responses[0](response(1));await first;
+ const third=push();await flush();
+ windows=[{url:'https://push.example.com/',visibilityState:'visible'}];
+ responses[2](response(3));await third;
+ assert.deepEqual(counts,[2]);
 });
 
 test('iOS window that refuses navigation still receives the target and is focused',async()=>{
  const events=[];
  await click({matchAll:async()=>[{
   url:'https://push.example.com/',navigate:async()=>{throw new Error('inert launch client')},
-  postMessage:message=>events.push(['message',message.id]),focus:async()=>events.push(['focus'])
- }],openWindow:async()=>assert.fail('reuse the installed app')},{id:'ios-message'});
- assert.deepEqual(events,[['message','ios-message'],['focus']]);
+  postMessage:notification=>events.push(['message',notification.id]),focus:async()=>events.push(['focus'])
+ }],openWindow:async()=>assert.fail('reuse the installed app')},{id:'ios-notification'});
+ assert.deepEqual(events,[['message','ios-notification'],['focus']]);
 });
 test('null navigation result can still reuse a surviving app window',async()=>{
- let focused=false,message;
+ let focused=false,notification;
  await click({matchAll:async()=>[{
   url:'https://push.example.com/',navigate:async()=>null,
-  postMessage:data=>{message=data},focus:async()=>{focused=true}
+  postMessage:data=>{notification=data},focus:async()=>{focused=true}
  }],openWindow:async()=>assert.fail('reuse the surviving client')});
- assert.equal(focused,true);assert.equal(message.id,'one');
+ assert.equal(focused,true);assert.equal(notification.id,'one');
 });
 test('cache errors and disappearing clients do not prevent opening the notification URL',async()=>{
  let target;
@@ -71,7 +111,7 @@ test('cache errors and disappearing clients do not prevent opening the notificat
   url:'https://push.example.com/',navigate:async()=>{throw Error('gone')},
   postMessage(){throw Error('gone')}
  }],openWindow:async url=>{target=url;return null}}, {id:'one'},'',{put:async()=>{throw Error('storage blocked')}});
- assert.equal(new URL(target).searchParams.get('message'),'one');
+ assert.equal(new URL(target).searchParams.get('notification'),'one');
 });
 
 test('failed receipt is persisted and rechecked without displaying another notification',async()=>{

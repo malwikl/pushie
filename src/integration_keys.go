@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -17,49 +16,6 @@ func integrationKeyValid(keys []personalAPIKey, hash string) bool {
 		}
 	}
 	return false
-}
-
-// Missing scope retains legacy Watchtower-only access.
-func integrationKeyCanSend(keys []personalAPIKey, hash string) bool {
-	for _, key := range keys {
-		if key.Scope == "send" && constantBytesEqual([]byte(key.Hash), []byte(hash)) {
-			return true
-		}
-	}
-	return false
-}
-
-// Integration keys are independent of user accounts.
-func (a *application) authorizeWatchtower(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
-	if authorized(r, a.cfg.sendToken) {
-		if !a.rateLimit(w, r) {
-			return r, false
-		}
-		failure(w, 401, "API-Schlüssel ungültig")
-		return r, false
-	}
-	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if strings.HasPrefix(r.Header.Get("Authorization"), "Bearer psk.") {
-		return a.authorizeSend(w, r)
-	}
-	if !a.rateLimit(w, r) {
-		return r, false
-	}
-	hash := invitationHash(token)
-	a.db.mu.RLock()
-	valid := strings.HasPrefix(r.Header.Get("Authorization"), "Bearer isk.") && len(token) <= 256 && integrationKeyValid(a.db.db.IntegrationKeys, hash)
-	a.db.mu.RUnlock()
-	if !valid {
-		failure(w, 401, "API-Schlüssel ungültig")
-		return r, false
-	}
-	if !a.auth.allow("integration:"+hash, 90) {
-		w.Header().Set("Retry-After", "60")
-		failure(w, 429, "Zu viele Anfragen")
-		return r, false
-	}
-	markAuthorization(r, "", "integration_key")
-	return r.WithContext(context.WithValue(r.Context(), integrationSenderContext{}, hash)), true
 }
 
 func (a *application) integrationKeyRoutes(mux *http.ServeMux) {
@@ -79,11 +35,7 @@ func (a *application) integrationKeyRoutes(mux *http.ServeMux) {
 		a.db.mu.RLock()
 		keys := make([]map[string]any, 0, len(a.db.db.IntegrationKeys))
 		for _, k := range a.db.db.IntegrationKeys {
-			scope := k.Scope
-			if scope == "" {
-				scope = "watchtower"
-			}
-			keys = append(keys, map[string]any{"id": k.ID, "name": k.Name, "createdAt": k.CreatedAt, "scope": scope})
+			keys = append(keys, map[string]any{"id": k.ID, "name": k.Name, "createdAt": k.CreatedAt, "scope": "send"})
 		}
 		a.db.mu.RUnlock()
 		reply(w, 200, map[string]any{"keys": keys})
@@ -96,10 +48,8 @@ func (a *application) integrationKeyRoutes(mux *http.ServeMux) {
 		if !decode(w, r, &in) {
 			return
 		}
-		if in.Scope == "" {
-			in.Scope = "watchtower"
-		}
-		if in.Scope != "watchtower" && in.Scope != "send" {
+		// Accept old clients' scope values; every integration key has sending access.
+		if in.Scope != "" && in.Scope != "watchtower" && in.Scope != "send" {
 			failure(w, 400, "Ungültige Berechtigung")
 			return
 		}
@@ -119,7 +69,7 @@ func (a *application) integrationKeyRoutes(mux *http.ServeMux) {
 			return
 		}
 		token := "isk." + raw
-		key := personalAPIKey{Scope: in.Scope, ID: id, Name: in.Name, Hash: invitationHash(token), CreatedAt: time.Now().UTC()}
+		key := personalAPIKey{Scope: "send", ID: id, Name: in.Name, Hash: invitationHash(token), CreatedAt: time.Now().UTC()}
 		limit := errors.New("limit")
 		err = a.db.update(func(db *database) error {
 			if len(db.IntegrationKeys) >= 100 {

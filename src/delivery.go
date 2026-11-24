@@ -40,13 +40,13 @@ type delivery struct {
 	SenderUserID     string       `json:"senderUserId,omitempty"`
 	SubscriptionHash string       `json:"subscriptionHash,omitempty"`
 	ID               string       `json:"id"`
-	MessageID        string       `json:"messageId"`
+	NotificationID   string       `json:"notificationId"`
 	UserID           string       `json:"userId"`
 	DeviceID         string       `json:"deviceId"`
 	DeviceName       string       `json:"deviceName"`
 	Content          notification `json:"content"`
 	ReceiptSecret    string       `json:"receiptSecret"` // Not returned from any API. Store file mode is 0600.
-	Status           string       `json:"status"`        // pending, sending, retry, accepted, confirmed, unconfirmed, failed
+	Status           string       `json:"status"`        // pending, sending, retry, accepted, confirmed, unconfirmed, failed, muted
 	Attempts         int          `json:"attempts"`
 	NextAttemptAt    time.Time    `json:"nextAttemptAt,omitempty"`
 	CreatedAt        time.Time    `json:"createdAt"`
@@ -79,10 +79,10 @@ func viewDelivery(d *delivery) deliveryView {
 	return v
 }
 
-func deliveryViews(db database, messageID, userID string) []deliveryView {
+func deliveryViews(db database, notificationID, userID string) []deliveryView {
 	result := make([]deliveryView, 0)
 	for _, d := range db.Deliveries {
-		if d.MessageID == messageID && (userID == "" || d.UserID == userID) {
+		if d.NotificationID == notificationID && (userID == "" || d.UserID == userID) {
 			result = append(result, viewDelivery(d))
 		}
 	}
@@ -107,45 +107,45 @@ func (a *application) sendStatusHandler(w http.ResponseWriter, r *http.Request) 
 }
 func (a *application) deliveryStatus(w http.ResponseWriter, r *http.Request, id string) {
 	if len(id) < 10 || len(id) > 128 {
-		failure(w, 404, "Nachricht nicht gefunden")
+		failure(w, 404, "Mitteilung nicht gefunden")
 		return
 	}
 	snap := a.db.snapshot()
 	if p, ok := r.Context().Value(personalSenderContext{}).(personalSender); ok {
 		owned := false
-		for _, m := range snap.Messages[p.UserID] {
+		for _, m := range snap.Notifications[p.UserID] {
 			if m.ID == id && m.SenderUserID == p.UserID {
 				owned = true
 			}
 		}
 		for _, d := range snap.Deliveries {
-			if d.MessageID == id && d.UserID == p.UserID && d.SenderUserID == p.UserID {
+			if d.NotificationID == id && d.UserID == p.UserID && d.SenderUserID == p.UserID {
 				owned = true
 			}
 		}
 		if !owned {
-			failure(w, 404, "Nachricht nicht gefunden")
+			failure(w, 404, "Mitteilung nicht gefunden")
 			return
 		}
 	}
 	views := deliveryViews(snap, id, "")
 	count := 0
-	for _, messages := range snap.Messages {
-		for _, m := range messages {
+	for _, notifications := range snap.Notifications {
+		for _, m := range notifications {
 			if m.ID == id {
 				count++
 			}
 		}
 	}
 	if count == 0 && len(views) == 0 {
-		failure(w, 404, "Nachricht nicht gefunden")
+		failure(w, 404, "Mitteilung nicht gefunden")
 		return
 	}
 	counts := map[string]int{}
 	for _, v := range views {
 		counts[v.Status]++
 	}
-	reply(w, 200, map[string]any{"messageId": id, "devices": views, "states": counts, "inboxUsers": count})
+	reply(w, 200, map[string]any{"notificationId": id, "devices": views, "states": counts, "inboxUsers": count})
 }
 
 func (a *application) acknowledgeDelivery(w http.ResponseWriter, r *http.Request) {
@@ -157,21 +157,21 @@ func (a *application) acknowledgeDelivery(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var req struct {
-		MessageID     string `json:"messageId"`
-		DeviceID      string `json:"deviceId"`
-		ReceiptSecret string `json:"receiptSecret"`
+		NotificationID string `json:"notificationId"`
+		DeviceID       string `json:"deviceId"`
+		ReceiptSecret  string `json:"receiptSecret"`
 	}
 	if !decode(w, r, &req) {
 		return
 	}
-	if len(req.MessageID) > 128 || len(req.DeviceID) > 128 || len(req.ReceiptSecret) > 128 || req.MessageID == "" || req.DeviceID == "" || req.ReceiptSecret == "" {
+	if len(req.NotificationID) > 128 || len(req.DeviceID) > 128 || len(req.ReceiptSecret) > 128 || req.NotificationID == "" || req.DeviceID == "" || req.ReceiptSecret == "" {
 		failure(w, 400, "Ungültige Empfangsbestätigung")
 		return
 	}
 	// Reject guessed receipts using an indexed lookup before cloning/mutating
 	// the store. This endpoint is intentionally accessible without a session.
 	var raw []byte
-	err := a.db.sqlDB.QueryRowContext(r.Context(), `SELECT payload FROM deliveries WHERE message_id=? AND device_id=? LIMIT 1`, req.MessageID, req.DeviceID).Scan(&raw)
+	err := a.db.sqlDB.QueryRowContext(r.Context(), `SELECT payload FROM deliveries WHERE notification_id=? AND device_id=? LIMIT 1`, req.NotificationID, req.DeviceID).Scan(&raw)
 	var candidate delivery
 	if err != nil || json.Unmarshal(raw, &candidate) != nil || subtle.ConstantTimeCompare([]byte(candidate.ReceiptSecret), []byte(req.ReceiptSecret)) != 1 {
 		failure(w, 404, "Bestätigung nicht gefunden oder abgelaufen")
@@ -310,13 +310,17 @@ func (a *application) processOneDelivery(ctx context.Context, id string, now tim
 	shouldSend := false
 	err := a.db.update(func(db *database) error {
 		d := db.Deliveries[id]
-		if d == nil || d.Status == "confirmed" || d.Status == "accepted" || d.Status == "failed" || d.Status == "unconfirmed" || d.NextAttemptAt.After(now) {
+		if d == nil || terminalDelivery(d.Status) || d.NextAttemptAt.After(now) {
 			return nil
 		}
 		// A missing browser receipt must never cause another visible notification.
 		// This also retires accepted jobs persisted by older server versions.
 		if d.AcceptedAt != nil {
 			finishDelivery(d, "")
+			return nil
+		}
+		if db.Users[d.UserID].topicMuted(d.Content.Topic, time.Now()) {
+			muteDelivery(d)
 			return nil
 		}
 		// On crash while sending, "sending" is recovered after its lease expires.
@@ -396,6 +400,12 @@ func finishDelivery(d *delivery, reason string) {
 	d.NextAttemptAt = time.Time{}
 }
 
+func muteDelivery(d *delivery) {
+	d.Status = "muted"
+	d.LastError = ""
+	d.NextAttemptAt = time.Time{}
+}
+
 func (a *application) resolveDelivery(id string, now time.Time, code int, detail string, suggestedDelay time.Duration) error {
 	slog.Info("push.provider_response", "delivery_id", id, "http_status", code, "retry_after_ms", suggestedDelay.Milliseconds())
 	return a.db.update(func(db *database) error {
@@ -404,6 +414,10 @@ func (a *application) resolveDelivery(id string, now time.Time, code int, detail
 			return nil
 		} // SW ACK may have arrived while sending.
 		if dev := db.Devices[d.DeviceID]; dev != nil && d.SubscriptionHash != "" && d.SubscriptionHash != subscriptionHash(dev.Subscription) {
+			if db.Users[d.UserID].topicMuted(d.Content.Topic, time.Now()) {
+				muteDelivery(d)
+				return nil
+			}
 			d.Status = "retry"
 			d.LastError = "Subscription changed during send"
 			d.NextAttemptAt = now.Add(initialRetryDelay)
@@ -445,7 +459,9 @@ func (a *application) resolveDelivery(id string, now time.Time, code int, detail
 			d.NextAttemptAt = time.Time{}
 		}
 		if d.Status == "retry" {
-			if d.Attempts >= maxDeliveryAttempts || !d.NextAttemptAt.Before(d.ExpiresAt) {
+			if db.Users[d.UserID].topicMuted(d.Content.Topic, time.Now()) {
+				muteDelivery(d)
+			} else if d.Attempts >= maxDeliveryAttempts || !d.NextAttemptAt.Before(d.ExpiresAt) {
 				finishDelivery(d, "delivery retry limit or time window exceeded")
 			}
 		}
@@ -463,7 +479,7 @@ func jsonNotification(n notification, deviceID, receiptSecret, origin string) ([
 		Tag      string            `json:"tag,omitempty"`
 		Data     map[string]string `json:"data"`
 	}
-	type message struct {
+	type pushPayload struct {
 		notification
 		DeviceID      string                  `json:"deviceId"`
 		ReceiptSecret string                  `json:"receiptSecret"`
@@ -474,7 +490,7 @@ func jsonNotification(n notification, deviceID, receiptSecret, origin string) ([
 	if title == "" {
 		title = "Push"
 	}
-	target := strings.TrimRight(origin, "/") + "/?message=" + url.QueryEscape(n.ID)
+	target := strings.TrimRight(origin, "/") + "/?notification=" + url.QueryEscape(n.ID)
 	// Older workers still receive a short preview; avoid duplicating the full
 	// body and exceeding APNs' encrypted payload limit during rollout.
 	legacy := n
@@ -485,7 +501,7 @@ func jsonNotification(n notification, deviceID, receiptSecret, origin string) ([
 		}
 		legacy.Body += "…"
 	}
-	return json.Marshal(message{notification: legacy, DeviceID: deviceID, ReceiptSecret: receiptSecret,
+	return json.Marshal(pushPayload{notification: legacy, DeviceID: deviceID, ReceiptSecret: receiptSecret,
 		WebPush: 8030, Declarative: declarativeNotification{Title: title, Body: n.Body,
 			Navigate: target, Tag: n.ID, Data: map[string]string{"id": n.ID}}})
 }

@@ -7,13 +7,13 @@ Self-hosted Web Push with passkeys, topics, a personal inbox, and a remote CLI.
 - Push notifications for phones, tablets, and desktop browsers.
 - Passkey login, invitation-based registration, and multiple devices per account.
 - Send to topics, users, selected devices, or all users.
-- Persistent inbox with read state, long messages, and live device sync.
+- Persistent inbox with read state, long notifications, and live device sync.
 - Matching Received/Sent lists with counted topic filters and responsive previews.
 - Manual-read preference and first-login device setup with installation guidance.
 - Choose which subscribed topics send push notifications to each device.
 - Delivery queue with retries, status tracking, and idempotent API requests.
 - REST API, standalone CLI, and Watchtower webhook.
-- Admin tools for users, topics, message logs, and database maintenance.
+- Admin tools for users, topics, notification logs, and database maintenance.
 - Installable web app with English/German UI and light/dark themes.
 
 ## Quick start
@@ -53,7 +53,7 @@ enable push on each device. On iPhone/iPad, add the site to the Home Screen
 and open the installed app first. Clear `BOOTSTRAP_OTP` after registration
 and recreate the container. Invite other users from Administration.
 
-## Send a message
+## Send a notification
 
 Create a personal API key under **Account → API keys** to send to your account:
 

@@ -38,11 +38,11 @@ func seedAndQueue(t *testing.T, a *application) (string, string) {
 	for id := range a.db.snapshot().Deliveries {
 		jobID = id
 	}
-	return result.MessageID, jobID
+	return result.NotificationID, jobID
 }
 func TestRetryThenConfirmAndPersist(t *testing.T) {
 	a := testApp(t)
-	messageID, jobID := seedAndQueue(t, a)
+	notificationID, jobID := seedAndQueue(t, a)
 	counter := 0
 	a.pushSend = func(_ context.Context, payload []byte, _ *webpush.Subscription, _ *webpush.Options) (*http.Response, error) {
 		counter++
@@ -51,7 +51,7 @@ func TestRetryThenConfirmAndPersist(t *testing.T) {
 			DeviceID      string `json:"deviceId"`
 			ReceiptSecret string `json:"receiptSecret"`
 		}
-		if err := json.Unmarshal(payload, &msg); err != nil || msg.ID != messageID || msg.DeviceID != "alex-phone" || len(msg.ReceiptSecret) < 32 {
+		if err := json.Unmarshal(payload, &msg); err != nil || msg.ID != notificationID || msg.DeviceID != "alex-phone" || len(msg.ReceiptSecret) < 32 {
 			t.Fatalf("invalid encrypted payload input: %s %v", payload, err)
 		}
 		code := 503
@@ -78,17 +78,17 @@ func TestRetryThenConfirmAndPersist(t *testing.T) {
 	if counter != 2 || second.Status != "accepted" || second.AcceptedAt == nil {
 		t.Fatalf("provider accepted: %+v", second)
 	}
-	bad := request(t, a.routes(), "POST", "/api/push/ack", map[string]string{"messageId": messageID, "deviceId": "alex-phone", "receiptSecret": "wrong"}, a.cfg.origin, "", "")
+	bad := request(t, a.routes(), "POST", "/api/push/ack", map[string]string{"notificationId": notificationID, "deviceId": "alex-phone", "receiptSecret": "wrong"}, a.cfg.origin, "", "")
 	if bad.Code != 404 {
 		t.Fatalf("accepted bad ack: %d", bad.Code)
 	}
-	ok := request(t, a.routes(), "POST", "/api/push/ack", map[string]string{"messageId": messageID, "deviceId": "alex-phone", "receiptSecret": second.ReceiptSecret}, a.cfg.origin, "", "")
+	ok := request(t, a.routes(), "POST", "/api/push/ack", map[string]string{"notificationId": notificationID, "deviceId": "alex-phone", "receiptSecret": second.ReceiptSecret}, a.cfg.origin, "", "")
 	if ok.Code != 200 {
 		t.Fatalf("valid ack: %d %s", ok.Code, ok.Body.String())
 	}
 	a.processDueDeliveries(context.Background(), now.Add(3*time.Hour))
 	if counter != 2 {
-		t.Fatal("retried an acknowledged message")
+		t.Fatal("retried an acknowledged notification")
 	}
 	opened, err := openStore(a.db.path)
 	if err != nil {
@@ -98,7 +98,7 @@ func TestRetryThenConfirmAndPersist(t *testing.T) {
 	if saved.Status != "confirmed" || saved.ConfirmedAt == nil {
 		t.Fatalf("ack not durable: %+v", saved)
 	}
-	if r := request(t, a.routes(), "GET", "/api/send/status/"+messageID, nil, "", a.cfg.sendToken, ""); r.Code != 200 || !bytes.Contains(r.Body.Bytes(), []byte(`"confirmed"`)) || bytes.Contains(r.Body.Bytes(), []byte(second.ReceiptSecret)) {
+	if r := request(t, a.routes(), "GET", "/api/send/status/"+notificationID, nil, "", a.cfg.sendToken, ""); r.Code != 200 || !bytes.Contains(r.Body.Bytes(), []byte(`"confirmed"`)) || bytes.Contains(r.Body.Bytes(), []byte(second.ReceiptSecret)) {
 		t.Fatalf("status exposure: %d %s", r.Code, r.Body.String())
 	}
 }
@@ -144,7 +144,7 @@ func TestOldConfirmationWaitIsRetiredOnRestart(t *testing.T) {
 	if d.Status != "accepted" || !d.NextAttemptAt.IsZero() || d.LastError != "" || d.ConfirmedAt != nil {
 		t.Fatalf("old confirmation wait not retired correctly: %+v", d)
 	}
-	for _, record := range reopened.snapshot().MessageLog {
+	for _, record := range reopened.snapshot().NotificationLog {
 		for _, view := range record.Deliveries {
 			if view.DeviceID == d.DeviceID && (view.Status != "accepted" || view.NextAttemptAt != nil || view.LastError != "") {
 				t.Fatalf("audit log still waiting: %+v", view)
@@ -179,7 +179,7 @@ func TestAckAndStatusAccessControl(t *testing.T) {
 	if r := request(t, h, "GET", "/api/admin/deliveries/"+id, nil, "", "", cookie); r.Code != 200 {
 		t.Fatalf("admin status %d", r.Code)
 	}
-	if r := request(t, h, "GET", "/api/me/messages", nil, "", "", cookie); r.Code != 200 || !bytes.Contains(r.Body.Bytes(), []byte(`"deliveries"`)) {
+	if r := request(t, h, "GET", "/api/me/notifications", nil, "", "", cookie); r.Code != 200 || !bytes.Contains(r.Body.Bytes(), []byte(`"deliveries"`)) {
 		t.Fatalf("inbox status %d", r.Code)
 	}
 }
@@ -204,10 +204,10 @@ func TestExternalIdempotencyKeyDoesNotDuplicate(t *testing.T) {
 		t.Fatalf("first: %d", code)
 	}
 	code, two, replay := send(payload)
-	if code != 200 || one.MessageID != two.MessageID || replay != "true" {
+	if code != 200 || one.NotificationID != two.NotificationID || replay != "true" {
 		t.Fatalf("duplicate: %d %+v %+v", code, one, two)
 	}
-	if len(a.db.snapshot().Messages["alex"]) != 1 {
+	if len(a.db.snapshot().Notifications["alex"]) != 1 {
 		t.Fatal("duplicate inbox event")
 	}
 	code, _, _ = send([]byte(`{"topic":"system","title":"Hi","body":"Changed"}`))
@@ -273,7 +273,7 @@ func TestNotificationNativeNavigation(t *testing.T) {
 	if err := json.Unmarshal(payload, &msg); err != nil {
 		t.Fatal(err)
 	}
-	if msg.WebPush != 8030 || msg.Notification.Navigate != "https://push.example.com/?message=a%2Fb" || msg.Notification.Title != "Push" || msg.Notification.Body != "Hello" || msg.Notification.Tag != "a/b" || msg.Notification.Data["id"] != "a/b" {
+	if msg.WebPush != 8030 || msg.Notification.Navigate != "https://push.example.com/?notification=a%2Fb" || msg.Notification.Title != "Push" || msg.Notification.Body != "Hello" || msg.Notification.Tag != "a/b" || msg.Notification.Data["id"] != "a/b" {
 		t.Fatalf("invalid native navigation payload: %s", payload)
 	}
 	if msg.ID != "a/b" || msg.DeviceID != "device" || msg.ReceiptSecret != "receipt" {
@@ -306,7 +306,7 @@ func TestNativeNotificationPreservesFullBodyWithinPayloadBudget(t *testing.T) {
 
 func TestAcceptedPushWithoutReceiptIsNeverResent(t *testing.T) {
 	a := testApp(t)
-	messageID, jobID := seedAndQueue(t, a)
+	notificationID, jobID := seedAndQueue(t, a)
 	sends := 0
 	a.pushSend = func(context.Context, []byte, *webpush.Subscription, *webpush.Options) (*http.Response, error) {
 		sends++
@@ -333,7 +333,7 @@ func TestAcceptedPushWithoutReceiptIsNeverResent(t *testing.T) {
 		t.Fatalf("resent accepted push: sends=%d %+v", sends, result)
 	}
 	// A delayed, valid browser receipt can still confirm the original delivery.
-	r := request(t, a.routes(), "POST", "/api/push/ack", map[string]string{"messageId": messageID, "deviceId": "alex-phone", "receiptSecret": accepted.ReceiptSecret}, a.cfg.origin, "", "")
+	r := request(t, a.routes(), "POST", "/api/push/ack", map[string]string{"notificationId": notificationID, "deviceId": "alex-phone", "receiptSecret": accepted.ReceiptSecret}, a.cfg.origin, "", "")
 	if r.Code != 200 || a.db.snapshot().Deliveries[jobID].Status != "confirmed" {
 		t.Fatalf("late receipt rejected: %d", r.Code)
 	}

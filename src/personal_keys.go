@@ -52,7 +52,7 @@ func (a *application) authorizeSend(w http.ResponseWriter, r *http.Request) (*ht
 		token := strings.TrimPrefix(header, "Bearer ")
 		hash := invitationHash(token)
 		a.db.mu.RLock()
-		valid := len(token) <= 256 && integrationKeyCanSend(a.db.db.IntegrationKeys, hash)
+		valid := len(token) <= 256 && integrationKeyValid(a.db.db.IntegrationKeys, hash)
 		a.db.mu.RUnlock()
 		if !valid {
 			failure(w, 401, "API-Schlüssel ungültig")

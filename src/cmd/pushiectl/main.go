@@ -22,21 +22,22 @@ func main() {
 	topic := fs.String("topic", "", "target topic")
 	user := fs.String("user", "", "target user ID")
 	device := fs.String("device", "", "target device ID")
+	broadcast := fs.Bool("broadcast", false, "send to all users (requires a server-wide sending token)")
 	title := fs.String("title", "Push", "notification title")
 	body := fs.String("body", "", "notification body")
 	stdin := fs.Bool("stdin", false, "read body from stdin")
 	tag := fs.String("tag", "", "notification tag")
-	longTextFile := fs.String("longtext-file", "", "file containing full detail text (max 256 KiB)")
-	statusID := fs.String("status", "", "query delivery status of a previously sent messageId")
+	bodyFile := fs.String("body-file", "", "read the full notification from a UTF-8 file (max 256 KiB)")
+	statusID := fs.String("status", "", "query delivery status of a previously sent notificationId")
 	key := fs.String("key", "", "optional idempotency key: reuse on retry after a timeout")
 	fs.Parse(os.Args[1:])
 	if *stdin {
-		b, err := io.ReadAll(io.LimitReader(os.Stdin, 2001))
+		b, err := io.ReadAll(io.LimitReader(os.Stdin, 256*1024+1))
 		if err != nil {
 			fatal("stdin: %v", err)
 		}
-		if len(b) > 2000 {
-			fatal("message too long")
+		if len(b) > 256*1024 {
+			fatal("notification too long")
 		}
 		*body = string(b)
 	}
@@ -47,10 +48,20 @@ func main() {
 	if *token == "" {
 		fatal("set PUSH_API_TOKEN (a personal API key or the server SEND_TOKEN)")
 	}
-	if *statusID == "" && strings.TrimSpace(*body) == "" {
-		fatal("set -body or -stdin")
+	if *bodyFile != "" {
+		if *stdin || *body != "" {
+			fatal("use only one of -body, -body-file or -stdin")
+		}
+		b, err := os.ReadFile(*bodyFile)
+		if err != nil {
+			fatal("read body: %v", err)
+		}
+		*body = string(b)
 	}
-	payload := map[string]string{}
+	if *statusID == "" && (strings.TrimSpace(*body) == "" || len(*body) > 256*1024) {
+		fatal("set -body, -body-file or -stdin (max 256 KiB)")
+	}
+	payload := map[string]any{}
 	if *statusID == "" {
 		n := 0
 		for _, v := range []string{*topic, *user, *device} {
@@ -58,22 +69,18 @@ func main() {
 				n++
 			}
 		}
-		if n > 1 {
-			fatal("specify at most one of -topic, -user or -device; personal keys default to your account")
+		if *broadcast {
+			n++
 		}
-		payload = map[string]string{"title": *title, "body": *body}
+		if n > 1 {
+			fatal("specify at most one of -topic, -user, -device or -broadcast; personal keys default to your account")
+		}
+		payload = map[string]any{"title": *title, "body": *body}
+		if *broadcast {
+			payload["broadcast"] = true
+		}
 		if *tag != "" {
 			payload["tag"] = *tag
-		}
-		if *longTextFile != "" {
-			longText, err := os.ReadFile(*longTextFile)
-			if err != nil {
-				fatal("read long text: %v", err)
-			}
-			if len(longText) > 256*1024 {
-				fatal("long text too large (max 256 KiB)")
-			}
-			payload["longText"] = string(longText)
 		}
 		if *topic != "" {
 			payload["topic"] = *topic
@@ -86,7 +93,7 @@ func main() {
 		}
 	}
 	if *statusID != "" && (strings.ContainsAny(*statusID, "/?#") || len(*statusID) > 128 || len(*statusID) < 10) {
-		fatal("invalid messageId")
+		fatal("invalid notificationId")
 	}
 	b, _ := json.Marshal(payload)
 	method, path := http.MethodPost, "/api/send"

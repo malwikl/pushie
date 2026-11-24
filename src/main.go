@@ -72,7 +72,7 @@ func failure(w http.ResponseWriter, status int, msg string) {
 }
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 	maxBytes := int64(32 * 1024)
-	if r.URL.Path == "/api/send" || r.URL.Path == "/api/admin/send" || r.URL.Path == "/api/integrations/watchtower" {
+	if r.URL.Path == "/api/send" || r.URL.Path == "/api/admin/send" {
 		maxBytes = 2 * 1024 * 1024
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
@@ -250,7 +250,6 @@ func (a *application) routes() http.Handler {
 	a.adminRoutes(mux)
 	a.storageAdminRoutes(mux)
 	mux.HandleFunc("POST /api/send", a.sendHandler)
-	mux.HandleFunc("POST /api/integrations/watchtower", a.watchtowerHandler)
 	mux.HandleFunc("GET /api/send/status/{id}", a.sendStatusHandler)
 	mux.HandleFunc("POST /api/push/ack", a.acknowledgeDelivery)
 	mux.HandleFunc("GET /admin", func(w http.ResponseWriter, r *http.Request) { r.URL.Path = "/"; mux.ServeHTTP(w, r) })

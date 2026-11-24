@@ -5,7 +5,7 @@ const vm=require('node:vm');
 const fs=require('node:fs');
 const path=require('node:path');
 const source=fs.readFileSync(path.join(__dirname,'../static/version.js'),'utf8');
-function fixture({version='20261108190000000000',next='20261108200000000000',saved=new Map(),offline=false,href='https://push.example/?message=one#message-one',blockedStorage=false}={}){
+function fixture({version='20261108190000000000',next='20261108200000000000',saved=new Map(),offline=false,href='https://push.example/?notification=one#notification-one',blockedStorage=false}={}){
  const listeners={},timers=[],navigations=[],requests=[];let now=100000;
  const location={href,replace:url=>navigations.push(url)};
  const document={hidden:false,querySelector:()=>({content:version}),addEventListener:(name,fn)=>{listeners[name]=fn}};
@@ -15,10 +15,10 @@ function fixture({version='20261108190000000000',next='20261108200000000000',sav
   setInterval:(fn,ms)=>timers.push({fn,ms}),fetch:async(url,options)=>{requests.push({url,options});if(offline)throw Error('offline');return {ok:true,json:async()=>({version:next})}}});
  return {window,document,listeners,timers,navigations,requests,saved,location,advance(){now+=60000},async flush(){await new Promise(resolve=>setImmediate(resolve))}};
 }
-test('newer build forces fresh navigation and preserves message links',async()=>{
+test('newer build forces fresh navigation and preserves notification links',async()=>{
  const f=fixture();await f.flush();assert.equal(f.navigations.length,1);
  const target=new URL(f.navigations[0]);assert.equal(target.searchParams.get('_build'),'20261108200000000000');
- assert.equal(target.searchParams.get('message'),'one');assert.equal(target.hash,'#message-one');
+ assert.equal(target.searchParams.get('notification'),'one');assert.equal(target.hash,'#notification-one');
  assert.equal(f.requests[0].options.cache,'no-store');assert.equal(f.window.pushieVersion,'20261108190000000000');
 });
 test('same and older builds, invalid replies and offline failures do not reload',async()=>{
@@ -43,10 +43,10 @@ test('version checks pause when hidden or signed out and resume on return',async
 });
 test('worker activation upgrades legacy windows but leaves current and newer windows alone',async()=>{
  const handlers={},urls=[];
- const clients={claim:async()=>{},matchAll:async()=>['https://push.example/?message=one#message-one','https://push.example/?_build=20261108200000000000','https://push.example/?_build=20261108300000000000'].map(url=>({url,navigate:async target=>urls.push(target)}))};
+ const clients={claim:async()=>{},matchAll:async()=>['https://push.example/?notification=one#notification-one','https://push.example/?_build=20261108200000000000','https://push.example/?_build=20261108300000000000'].map(url=>({url,navigate:async target=>urls.push(target)}))};
  const worker=fs.readFileSync(path.join(__dirname,'../static/sw.js'),'utf8').replaceAll('__PUSHIE_VERSION__','20261108200000000000');
  vm.runInNewContext(worker,{clients,URL,self:{location:{origin:'https://push.example'},addEventListener:(name,fn)=>{handlers[name]=fn}}});
  let task;handlers.activate({waitUntil:pending=>{task=pending}});await task;
- assert.equal(urls.length,1);assert.equal(new URL(urls[0]).searchParams.get('message'),'one');
- assert.equal(new URL(urls[0]).hash,'#message-one');
+ assert.equal(urls.length,1);assert.equal(new URL(urls[0]).searchParams.get('notification'),'one');
+ assert.equal(new URL(urls[0]).hash,'#notification-one');
 });
